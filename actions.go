@@ -7,12 +7,6 @@ import (
 	"time"
 )
 
-type ActionOld interface {
-	Execute(*Config) (interface{}, error)
-	Additions(*Config) map[string]Action
-	Removals() []string
-	Name
-}
 type Action interface {
 	Name
 	// use questions to setup a payload and return it, since questions can only be run on the main thread
