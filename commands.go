@@ -30,6 +30,8 @@ func (c *Commands) new(conf *Config) *Commands {
 		return *c, nil
 	}), "config")
 	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
+	c.Set(NewNoPayloadAction("quit", func(*Config) (interface{}, error) { return nil, QuitError{} }))
+	// TODO Fix
 	c.Set(NewNoPayloadAction("lookup", func(*Config) (interface{}, error) {
 		name := ""
 		if err := scan("name of result to lookup?", &name); err != nil {
