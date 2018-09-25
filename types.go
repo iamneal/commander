@@ -1,6 +1,7 @@
 package commander
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -28,6 +29,7 @@ type Work struct {
 	Name    string
 	job     ExecuteFunc
 	payload interface{}
+	wait    chan struct{}
 	// job     func(*Config, interface{}) (interface{}, error)
 	// only populated after Do is called on the result
 	Result     interface{}
@@ -39,11 +41,25 @@ func WorkFromAction(a Action, payload interface{}) *Work {
 	return &Work{
 		Name:      a.Name(),
 		job:       a.Execute,
+		wait:      make(chan struct{}, 1),
 		CreatedAt: time.Now(),
 	}
 }
 
-func (w *Work) Do(conf *Config) error {
+func (w *Work) Wait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.wait:
+		return nil
+	}
+}
+
+func (w *Work) do(conf *Config) error {
+	defer func() {
+		close(w.wait)
+	}()
+
 	res, err := w.job(conf, w.payload)
 	w.FinishedAt = time.Now()
 	if err != nil {
@@ -69,7 +85,7 @@ func NewWorkChan(buff int64) *WorkChan {
 func (w *WorkChan) Start(conf *Config) {
 	for v := range w.queue {
 		w.CachedResults[v.Name] = v
-		v.Do(conf)
+		v.do(conf)
 	}
 }
 func (w *WorkChan) Stop() {

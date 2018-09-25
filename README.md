@@ -35,9 +35,14 @@ func main() {
         // for the length of the action the result is not returned, 
         // it can be accessed through the lookup command, and the action name
         if err := commands.Get(cmd)(); err != nil {
-            if _, ok: err.(commander.QuitErr); ok {
+            if work, ok: err.(commander.QuitErr); ok {
                 fmt.Println("quitting...")
                 break
+            } else {
+                // Wait can be called multiple times, even if the work has been done
+                // Wait blocks till the work has been completed
+                work.Wait()
+                fmt.Println(work.Result)
             }
         }
     }

@@ -1,9 +1,9 @@
 package commander
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"time"
 )
 
 type Commands struct {
@@ -30,13 +30,13 @@ func (c *Commands) new(conf *Config) *Commands {
 		return *c, nil
 	}), "config")
 	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
-	c.Set(NewNoPayloadAction("quit", func(*Config) (interface{}, error) { return nil, QuitError{} }))
-	c.Set(BuildOverriding(WrapNameAction{}.New("lookup", NopAction{})).
-		WithPayload(func(*Config) (interface{}, error) {
+	c.Set(Build().WithName("quit").WithPayload(nil, QuitError{}))
+	c.Set(Build().WithName("lookup").
+		WithPayloadFunc(func(*Config) (interface{}, error) {
 			var alias string
 			return alias, scan("lookup last result to which command?", &alias)
 		}).
-		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
+		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
 			name, ok := payload.(string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not string %#v", name)
@@ -46,8 +46,8 @@ func (c *Commands) new(conf *Config) *Commands {
 
 			return nil, nil
 		}))
-	c.Set(BuildOverriding(WrapNameAction{}.New("filter", NopAction{})).
-		WithPayload(func(*Config) (interface{}, error) {
+	c.Set(Build().WithName("filter").
+		WithPayloadFunc(func(*Config) (interface{}, error) {
 			tags := ""
 			if err := scan("enter tags to filter by separated by space:", &tags); err != nil {
 				return nil, err
@@ -55,7 +55,7 @@ func (c *Commands) new(conf *Config) *Commands {
 			ts := strings.Split(tags, " \t")
 			return ts, nil
 		}).
-		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
+		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
 			ts, ok := payload.([]string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not []string")
@@ -70,12 +70,12 @@ func (c *Commands) new(conf *Config) *Commands {
 
 			return nil, nil
 		}))
-	c.Set(BuildOverriding(WrapNameAction{}.New("aliases", NopAction{})).
-		WithPayload(func(*Config) (interface{}, error) {
+	c.Set(Build().WithName("aliases").
+		WithPayloadFunc(func(*Config) (interface{}, error) {
 			var alias string
 			return alias, scan("alias to which command?", &alias)
 		}).
-		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
+		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
 			ts, ok := payload.(string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not string")
@@ -101,7 +101,7 @@ func (c *Commands) Set(a Action, additionalKeys ...string) {
 	c.cmds[a.Name()] = a
 }
 
-func (c *Commands) Wrap(a Action) func() error {
+func (c *Commands) Wrap(a Action) func() (*Work, error) {
 	return c.processor(a)
 }
 
@@ -110,7 +110,7 @@ func (c *Commands) Remove(keys ...string) {
 		c.cmds[v] = nil
 	}
 }
-func (c *Commands) Get(key string) func() error {
+func (c *Commands) Get(key string) func() (*Work, error) {
 	if k, ok := c.cmds[strings.TrimSpace(strings.ToLower(key))]; k != nil && ok {
 		return c.processor(k)
 	}
@@ -171,34 +171,25 @@ func (c *Commands) KnownTags() (out []string) {
 	return
 }
 
-func (c *Commands) processor(a Action) func() error {
-	return func() error {
+func (c *Commands) processor(a Action) func() (*Work, error) {
+	return func() (*Work, error) {
 		dashes(fmt.Sprintf("executing action %s", a.Name()))
 		payload, err := a.Payload(c.conf)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		c.workChan.Queue(WorkFromAction(a, payload))
-
-		t := time.NewTicker(time.Millisecond * 500)
+		work := WorkFromAction(a, payload)
+		c.workChan.Queue(work)
 		go func() {
-			for {
-				<-t.C
-				item, ok := c.workChan.CachedResults[a.Name()]
-				var zero time.Time
-				if !ok || item == nil || item.FinishedAt != zero {
-					break
+			if err := work.Wait(context.Background()); err == nil {
+				for k, v := range a.Additions(c.conf) {
+					c.Set(v, k)
 				}
+				c.Remove(a.Removals()...)
 			}
-			t.Stop()
-			for k, v := range a.Additions(c.conf) {
-				c.Set(v, k)
-			}
-			c.Remove(a.Removals()...)
-
 			dashes(fmt.Sprintf("finished action %s\n, examine it with lookup result", a.Name()))
+
 		}()
-		return nil
+		return work, nil
 	}
 }

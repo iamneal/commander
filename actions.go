@@ -28,28 +28,52 @@ type BuilderAction struct {
 	tags      TagsFunc
 }
 
-func (o *BuilderAction) WithName(n NameFunc) *BuilderAction {
+func (o *BuilderAction) WithNameFunc(n NameFunc) *BuilderAction {
 	o.name = n
 	return o
 }
-func (o *BuilderAction) WithPayload(p PayloadFunc) *BuilderAction {
+func (o *BuilderAction) WithPayloadFunc(p PayloadFunc) *BuilderAction {
 	o.payload = p
 	return o
 }
-func (o *BuilderAction) WithExecute(e ExecuteFunc) *BuilderAction {
+func (o *BuilderAction) WithExecuteFunc(e ExecuteFunc) *BuilderAction {
 	o.execute = e
 	return o
 }
-func (o *BuilderAction) WithAdditions(a AdditionsFunc) *BuilderAction {
+func (o *BuilderAction) WithAdditionsFunc(a AdditionsFunc) *BuilderAction {
 	o.additions = a
 	return o
 }
-func (o *BuilderAction) WithRemovals(r RemovalsFunc) *BuilderAction {
+func (o *BuilderAction) WithRemovalsFunc(r RemovalsFunc) *BuilderAction {
 	o.removals = r
 	return o
 }
-func (o *BuilderAction) WithTags(t TagsFunc) *BuilderAction {
+func (o *BuilderAction) WithTagsFunc(t TagsFunc) *BuilderAction {
 	o.tags = t
+	return o
+}
+func (o *BuilderAction) WithName(n string) *BuilderAction {
+	o.name = func() string { return n }
+	return o
+}
+func (o *BuilderAction) WithPayload(p interface{}, err error) *BuilderAction {
+	o.payload = func(*Config) (interface{}, error) { return p, err }
+	return o
+}
+func (o *BuilderAction) WithExecute(result interface{}, err error) *BuilderAction {
+	o.execute = func(*Config, interface{}) (interface{}, error) { return result, err }
+	return o
+}
+func (o *BuilderAction) WithAdditions(a map[string]Action) *BuilderAction {
+	o.additions = func(*Config) map[string]Action { return a }
+	return o
+}
+func (o *BuilderAction) WithRemovals(r []string) *BuilderAction {
+	o.removals = func() []string { return r }
+	return o
+}
+func (o *BuilderAction) WithTags(t []string) *BuilderAction {
+	o.tags = func() []string { return t }
 	return o
 }
 func (o *BuilderAction) Payload(c *Config) (interface{}, error)                { return o.payload(c) }
@@ -263,7 +287,7 @@ func MakeTrigger(parent Action, children ...Action) Action {
 	for _, v := range children {
 		m[v.Name()] = v
 	}
-	return BuildOverriding(parent).WithAdditions(func(*Config) map[string]Action { return m })
+	return BuildOverriding(parent).WithAdditions(m)
 }
 
 func PrintAction(name, msg string) Action {
