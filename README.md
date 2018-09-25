@@ -22,7 +22,7 @@ func main() {
     config := Something{}
 
     // make a new commands struct with this config and action list
-    commands := NewCommands(config, commander.PrintAction("hello", "HELLO WORLD"))
+    commands := commander.NewCommands(config, commander.PrintAction("hello", "HELLO WORLD"))
 
 
     for {
@@ -45,6 +45,7 @@ func main() {
 ```
 
 ## TODO
+- func MakeAvailableAfter(parent, child Action, additionalKeys) Action
 - overrides action builder that sources an action as parent and overrides anything not nil through a builder
 - make a saveResult and loadResult action to copy results from memory to a spot in the config, or back
 - write the payload function helpers (payload func() interface, ensure payload function exists on v2 structure)

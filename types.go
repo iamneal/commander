@@ -12,8 +12,14 @@ func (QuitError) Error() string {
 }
 
 type Config interface{}
+
+type NameFunc func() string
 type ExecuteFunc func(*Config, interface{}) (interface{}, error)
 type PayloadFunc func(*Config) (interface{}, error)
+type AdditionsFunc func(*Config) map[string]Action
+type RemovalsFunc func() []string
+type TagsFunc func() []string
+
 type Name interface {
 	Name() string
 }

@@ -7,26 +7,28 @@ import (
 )
 
 type Commands struct {
-	cmds     map[string]func() error
+	cmds     map[string]Action
 	workChan *WorkChan
+	conf     *Config
 }
 
 func NewCommands(c *Config, actions ...Action) *Commands {
 	cmds := Commands{}.new(c)
 	for _, a := range actions {
-		cmds.Set(a, c)
+		cmds.Set(a)
 	}
 	return cmds
 }
 
 func (c Commands) new(conf *Config) *Commands {
-	c.Set(HelpAction{cmds: &c}, conf)
-	c.Set(LoadAction{}, conf)
-	c.Set(SaveAction{}, conf)
+	c.conf = conf
+	c.Set(HelpAction{cmds: &c})
+	c.Set(LoadAction{})
+	c.Set(SaveAction{})
 	c.Set(NoPayloadAction{}.New("print-config", func(c *Config) (interface{}, error) {
 		fmt.Println(prettyJ(c))
 		return *c, nil
-	}), conf, "config")
+	}), "config")
 	c.Set(NewNoPayloadAction("lookup", func(*Config) (interface{}, error) {
 		name := ""
 		if err := scan("name of result to lookup?", &name); err != nil {
@@ -35,20 +37,20 @@ func (c Commands) new(conf *Config) *Commands {
 		fmt.Printf("\n%v\n", prettyJ(c.workChan.CachedResults[name]))
 
 		return nil, nil
-	}), conf)
+	}))
 
 	return &c
 }
 
-func (c *Commands) Set(a Action, conf *Config, additionalKeys ...string) {
+func (c *Commands) Set(a Action, additionalKeys ...string) {
 	for _, v := range additionalKeys {
-		c.cmds[v] = c.processor(a, conf)
+		c.cmds[v] = a
 	}
-	c.cmds[a.Name()] = c.processor(a, conf)
+	c.cmds[a.Name()] = a
 }
 
-func (c *Commands) Wrap(a Action, conf *Config) func() error {
-	return c.processor(a, conf)
+func (c *Commands) Wrap(a Action) func() error {
+	return c.processor(a)
 }
 
 func (c *Commands) Remove(keys ...string) {
@@ -57,11 +59,11 @@ func (c *Commands) Remove(keys ...string) {
 	}
 }
 func (c *Commands) Get(key string) func() error {
-	if k, _ := c.cmds[strings.TrimSpace(strings.ToLower(key))]; k != nil {
-		return k
+	if k, ok := c.cmds[strings.TrimSpace(strings.ToLower(key))]; k != nil && ok {
+		return c.processor(k)
 	}
 	fmt.Println("\tunknown command: " + key)
-	return c.cmds["help"]
+	return c.processor(c.cmds["help"])
 }
 
 func (c *Commands) LatestResult(a Action) *Work {
@@ -77,10 +79,10 @@ func (c *Commands) KnownCommands() (out []string) {
 	return
 }
 
-func (c *Commands) processor(a Action, conf *Config) func() error {
+func (c *Commands) processor(a Action) func() error {
 	return func() error {
 		dashes(fmt.Sprintf("executing action %s", a.Name()))
-		payload, err := a.Payload(conf)
+		payload, err := a.Payload(c.conf)
 		if err != nil {
 			return err
 		}
@@ -98,8 +100,8 @@ func (c *Commands) processor(a Action, conf *Config) func() error {
 				}
 			}
 			t.Stop()
-			for k, v := range a.Additions(conf) {
-				c.Set(v, conf, k)
+			for k, v := range a.Additions(c.conf) {
+				c.Set(v, k)
 			}
 			c.Remove(a.Removals()...)
 

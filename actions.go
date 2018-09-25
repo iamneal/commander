@@ -19,6 +19,67 @@ type Action interface {
 	Tags() []string
 }
 
+type BuilderAction struct {
+	name      NameFunc
+	payload   PayloadFunc
+	execute   ExecuteFunc
+	additions AdditionsFunc
+	removals  RemovalsFunc
+	tags      TagsFunc
+}
+
+func (o *BuilderAction) WithName(n NameFunc) *BuilderAction {
+	o.name = n
+	return o
+}
+func (o *BuilderAction) WithPayload(p PayloadFunc) *BuilderAction {
+	o.payload = p
+	return o
+}
+func (o *BuilderAction) WithExecute(e ExecuteFunc) *BuilderAction {
+	o.execute = e
+	return o
+}
+func (o *BuilderAction) WithAdditions(a AdditionsFunc) *BuilderAction {
+	o.additions = a
+	return o
+}
+func (o *BuilderAction) WithRemovals(r RemovalsFunc) *BuilderAction {
+	o.removals = r
+	return o
+}
+func (o *BuilderAction) WithTags(t TagsFunc) *BuilderAction {
+	o.tags = t
+	return o
+}
+func (o *BuilderAction) Payload(c *Config) (interface{}, error)                { return o.payload(c) }
+func (o *BuilderAction) Execute(c *Config, p interface{}) (interface{}, error) { return o.execute(c, p) }
+func (o *BuilderAction) Additions(c *Config) map[string]Action                 { return o.additions(c) }
+func (o *BuilderAction) Removals() []string                                    { return o.removals() }
+func (o *BuilderAction) Name() string                                          { return o.name() }
+func (o BuilderAction) Tags() []string                                         { return o.tags() }
+
+func BuildOverriding(parent Action) *BuilderAction {
+	return &BuilderAction{
+		name:      parent.Name,
+		payload:   parent.Payload,
+		execute:   parent.Execute,
+		additions: parent.Additions,
+		removals:  parent.Removals,
+		tags:      parent.Tags,
+	}
+}
+func Build() *BuilderAction { return BuildOverriding(NopAction{}) }
+
+type NopAction struct{}
+
+func (NopAction) Name() string                                              { return "" }
+func (NopAction) Payload(*Config) (_ interface{}, _ error)                  { return }
+func (NopAction) Execute(c *Config, p interface{}) (_ interface{}, _ error) { return }
+func (NopAction) Additions(c *Config) map[string]Action                     { return nil }
+func (NopAction) Removals() []string                                        { return nil }
+func (NopAction) Tags() []string                                            { return nil }
+
 type LoadAction struct{}
 
 func (s LoadAction) Payload(conf *Config) (interface{}, error) {
@@ -191,6 +252,17 @@ func (w *WatchAction) Additions(*Config) map[string]Action {
 			return nil, nil
 		}),
 	}
+}
+func (w *WatchAction) Removals() []string { return w.action.Removals() }
+func (w *WatchAction) Name() string       { return w.name }
+func (w *WatchAction) Tags() []string     { return []string{"watch", "repeating", w.name} }
+
+func MakeTrigger(parent Action, children ...Action) Action {
+	m := make(map[string]Action)
+	for _, v := range children {
+		m[v.Name()] = v
+	}
+	return BuildOverriding(parent).WithAdditions(func(*Config) map[string]Action { return m })
 }
 
 func PrintAction(name, msg string) Action {
