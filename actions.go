@@ -193,10 +193,6 @@ func (w *WatchAction) Additions(*Config) map[string]Action {
 	}
 }
 
-type ChainAction struct {
-	init Action
-}
-
 func PrintAction(name, msg string) Action {
 	return NoPayloadAction{}.New(name, func(*Config) (_ interface{}, _ error) {
 		fmt.Println(msg)
