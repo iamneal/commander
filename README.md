@@ -45,8 +45,6 @@ func main() {
 ```
 
 ## TODO
-- func MakeAvailableAfter(parent, child Action, additionalKeys) Action
-- overrides action builder that sources an action as parent and overrides anything not nil through a builder
 - make a saveResult and loadResult action to copy results from memory to a spot in the config, or back
 - write the payload function helpers (payload func() interface, ensure payload function exists on v2 structure)
     also:
@@ -55,8 +53,6 @@ func main() {
     - payload function from file
     - look into reader writer interfaces
     - payload function from scanner
-- wrie a function that when given a slice of actions, gives you a commands object
-- write a filter function that will filter commands and print them by tag
 - write an action combiner that can take a seq of actions and gives the result of each previous action
     to the next action, and not saving the intermediate steps
 - write a function that takes a grpc interface and gives you a commands object
