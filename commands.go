@@ -65,6 +65,26 @@ func (c *Commands) new(conf *Config) *Commands {
 
 			return nil, nil
 		}))
+	c.Set(BuildOverriding(WrapNameAction{}.New("aliases", NopAction{})).
+		WithPayload(func(*Config) (interface{}, error) {
+			var alias string
+			return alias, scan("alias to which command?", &alias)
+		}).
+		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
+			ts, ok := payload.([]string)
+			if !ok {
+				return nil, fmt.Errorf("payload was not []string")
+			}
+
+			msg := fmt.Sprint("commands aliased to %s:\n", ts)
+
+			for _, v := range c.FilterActions(ts...) {
+				msg += "\t" + v.Name() + "\n"
+			}
+			fmt.Print(msg)
+
+			return nil, nil
+		}))
 
 	return c
 }
@@ -125,7 +145,14 @@ func (c *Commands) FilterActions(tags ...string) (out []Action) {
 	}
 	return
 }
-
+func (c *Commands) Aliases(name string) (out []string) {
+	for k, v := range c.cmds {
+		if v.Name() == c.cmds[name].Name() {
+			out = append(out, k)
+		}
+	}
+	return
+}
 func (c *Commands) KnownTags() (out []string) {
 	o := make(map[string]bool)
 	for _, i := range c.cmds {
