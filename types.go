@@ -23,12 +23,6 @@ type TagsFunc func() []string
 type Name interface {
 	Name() string
 }
-type DisplayKey string
-type Display interface {
-	// display with the given key as an
-	Display(DisplayKey)
-	DisplayOpts() []DisplayKey
-}
 
 type Work struct {
 	Name    string

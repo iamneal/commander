@@ -13,22 +13,23 @@ type Commands struct {
 }
 
 func NewCommands(c *Config, actions ...Action) *Commands {
-	cmds := Commands{}.new(c)
+	cmds := (&Commands{}).new(c)
 	for _, a := range actions {
 		cmds.Set(a)
 	}
 	return cmds
 }
 
-func (c Commands) new(conf *Config) *Commands {
+func (c *Commands) new(conf *Config) *Commands {
 	c.conf = conf
-	c.Set(HelpAction{cmds: &c})
+	c.Set(HelpAction{cmds: c})
 	c.Set(LoadAction{})
 	c.Set(SaveAction{})
 	c.Set(NoPayloadAction{}.New("print-config", func(c *Config) (interface{}, error) {
 		fmt.Println(prettyJ(c))
 		return *c, nil
 	}), "config")
+	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
 	c.Set(NewNoPayloadAction("lookup", func(*Config) (interface{}, error) {
 		name := ""
 		if err := scan("name of result to lookup?", &name); err != nil {
@@ -38,8 +39,32 @@ func (c Commands) new(conf *Config) *Commands {
 
 		return nil, nil
 	}))
+	c.Set(BuildOverriding(WrapNameAction{}.New("filter", NopAction{})).
+		WithPayload(func(*Config) (interface{}, error) {
+			tags := ""
+			if err := scan("enter tags to filter by separated by space:", &tags); err != nil {
+				return nil, err
+			}
+			ts := strings.Split(tags, " \t")
+			return ts, nil
+		}).
+		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
+			ts, ok := payload.([]string)
+			if !ok {
+				return nil, fmt.Errorf("payload was not []string")
+			}
 
-	return &c
+			msg := fmt.Sprint("actions in tag group:\n%v\n", ts)
+
+			for _, v := range c.FilterActions(ts...) {
+				msg += "\t" + v.Name() + "\n"
+			}
+			fmt.Print(msg)
+
+			return nil, nil
+		}))
+
+	return c
 }
 
 func (c *Commands) Set(a Action, additionalKeys ...string) {
@@ -75,6 +100,39 @@ func (c *Commands) KnownCommands() (out []string) {
 		if v != nil {
 			out = append(out, k)
 		}
+	}
+	return
+}
+func (c *Commands) FilterActions(tags ...string) (out []Action) {
+	ts := make(map[string]bool)
+	for _, v := range tags {
+		ts[v] = true
+	}
+	atLeastOneMatch := func(others []string) bool {
+		for _, v := range others {
+			if ts[v] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, v := range c.cmds {
+		if atLeastOneMatch(v.Tags()) {
+			out = append(out, v)
+		}
+	}
+	return
+}
+
+func (c *Commands) KnownTags() (out []string) {
+	o := make(map[string]bool)
+	for _, i := range c.cmds {
+		for _, j := range i.Tags() {
+			o[j] = true
+		}
+	}
+	for k, _ := range o {
+		out = append(out, k)
 	}
 	return
 }

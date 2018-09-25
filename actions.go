@@ -186,6 +186,7 @@ func (s WrapNameAction) New(name string, action Action) WrapNameAction {
 
 	return s
 }
+func (s WrapNameAction) Payload(c *Config) (interface{}, error) { return s.oldAction.Payload(c) }
 func (s WrapNameAction) Execute(conf *Config, payload interface{}) (interface{}, error) {
 	return s.oldAction.Execute(conf, payload)
 }
