@@ -31,16 +31,21 @@ func (c *Commands) new(conf *Config) *Commands {
 	}), "config")
 	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
 	c.Set(NewNoPayloadAction("quit", func(*Config) (interface{}, error) { return nil, QuitError{} }))
-	// TODO Fix
-	c.Set(NewNoPayloadAction("lookup", func(*Config) (interface{}, error) {
-		name := ""
-		if err := scan("name of result to lookup?", &name); err != nil {
-			return nil, err
-		}
-		fmt.Printf("\n%v\n", prettyJ(c.workChan.CachedResults[name]))
+	c.Set(BuildOverriding(WrapNameAction{}.New("lookup", NopAction{})).
+		WithPayload(func(*Config) (interface{}, error) {
+			var alias string
+			return alias, scan("lookup last result to which command?", &alias)
+		}).
+		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
+			name, ok := payload.(string)
+			if !ok {
+				return nil, fmt.Errorf("payload was not string %#v", name)
+			}
 
-		return nil, nil
-	}))
+			fmt.Printf("result to %s:\n%v\n", name, prettyJ(c.workChan.CachedResults[name]))
+
+			return nil, nil
+		}))
 	c.Set(BuildOverriding(WrapNameAction{}.New("filter", NopAction{})).
 		WithPayload(func(*Config) (interface{}, error) {
 			tags := ""
@@ -71,15 +76,15 @@ func (c *Commands) new(conf *Config) *Commands {
 			return alias, scan("alias to which command?", &alias)
 		}).
 		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
-			ts, ok := payload.([]string)
+			ts, ok := payload.(string)
 			if !ok {
-				return nil, fmt.Errorf("payload was not []string")
+				return nil, fmt.Errorf("payload was not string")
 			}
 
 			msg := fmt.Sprint("commands aliased to %s:\n", ts)
 
-			for _, v := range c.FilterActions(ts...) {
-				msg += "\t" + v.Name() + "\n"
+			for _, v := range c.Aliases(ts) {
+				msg += "\t" + v + "\n"
 			}
 			fmt.Print(msg)
 
