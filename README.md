@@ -14,21 +14,26 @@ package main
 
 import (
     "fmt"
-    "github.com/iamneal/commander"
+	"github.com/iamneal/commander"
+)
 
 func main() {
     // the config could be anything.  Your actions will handle this 
     config := Something{}
 
-    commands := NewCommands(config, commander.PrintAction("hello", "HELLO WORLD")
+    // make a new commands struct with this config and action list
+    commands := NewCommands(config, commander.PrintAction("hello", "HELLO WORLD"))
+
 
 	for {
         var cmd string
-        fmt.Scanf("what command to run? ", &cmd)
-        // command is ran here, if the command name is not found, the help command is ran
-        // commands are run in parallel, but it is safe to treat them as having sole access to the config
-        // for the length of the action
-        // the result is not returned, it can be accessed through the lookup command, and the action name
+        fmt.Scanln("what command to run? ", &cmd)
+
+		// command is ran here, if the command name is not found, the 
+		// help command is ran commands are run in parallel, but it 
+		// is safe to treat them as having sole access to the config
+		// for the length of the action the result is not returned, 
+		// it can be accessed through the lookup command, and the action name
         if err := commands.Get(cmd)(); err != nil {
             if _, ok: err.(commander.QuitErr); ok {
                 fmt.Println("quitting...")

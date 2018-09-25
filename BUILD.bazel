@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
+load("@bazel_gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix github.com/iamneal/commander
+# gazelle:exclude vendor
+
+gazelle(
+    name = "gazelle",
+    extra_args = [
+        "-proto",
+        "disable",
+    ],
+    prefix = "git.tcncloud.net/m/neo",
+)
+
+go_path(
+    name = "vendor",
+    deps = [":go_default_library"],
+)
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "actions.go",
+        "commands.go",
+        "types.go",
+        "utils.go",
+    ],
+    importpath = "github.com/iamneal/commander",
+    visibility = ["//visibility:public"],
+)
