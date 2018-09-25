@@ -25,13 +25,13 @@ func (c *Commands) new(conf *Config) *Commands {
 	c.Set(HelpAction{cmds: c})
 	c.Set(LoadAction{})
 	c.Set(SaveAction{})
-	c.Set(NoPayloadAction{}.New("print-config", func(c *Config) (interface{}, error) {
+	c.Set(BuildOverriding(NoPayloadAction{}.New("print-config", func(c *Config) (interface{}, error) {
 		fmt.Println(prettyJ(c))
 		return *c, nil
-	}), "config")
+	})).WithTagsV("print-config", "default"))
 	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
-	c.Set(Build().WithName("quit").WithPayload(nil, QuitError{}))
-	c.Set(Build().WithName("lookup").
+	c.Set(Build().WithName("quit").WithPayload(nil, QuitError{}).WithTagsV("quit", "default"))
+	c.Set(Build().WithName("lookup").WithTagsV("lookup", "default").
 		WithPayloadFunc(func(*Config) (interface{}, error) {
 			var alias string
 			return alias, scan("lookup last result to which command?", &alias)
@@ -46,7 +46,7 @@ func (c *Commands) new(conf *Config) *Commands {
 
 			return nil, nil
 		}))
-	c.Set(Build().WithName("filter").
+	c.Set(Build().WithName("filter").WithTagsV("filter", "default").
 		WithPayloadFunc(func(*Config) (interface{}, error) {
 			tags := ""
 			if err := scan("enter tags to filter by separated by space:", &tags); err != nil {
@@ -70,7 +70,7 @@ func (c *Commands) new(conf *Config) *Commands {
 
 			return nil, nil
 		}))
-	c.Set(Build().WithName("aliases").
+	c.Set(Build().WithName("aliases").WithTagsV("aliases", "default").
 		WithPayloadFunc(func(*Config) (interface{}, error) {
 			var alias string
 			return alias, scan("alias to which command?", &alias)

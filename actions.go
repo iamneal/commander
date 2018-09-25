@@ -72,10 +72,13 @@ func (o *BuilderAction) WithRemovals(r []string) *BuilderAction {
 	o.removals = func() []string { return r }
 	return o
 }
+func (o *BuilderAction) WithRemovalsV(rs ...string) *BuilderAction { return o.WithRemovals(rs) }
 func (o *BuilderAction) WithTags(t []string) *BuilderAction {
 	o.tags = func() []string { return t }
 	return o
 }
+func (o *BuilderAction) WithTagsV(ts ...string) *BuilderAction { return o.WithTags(ts) }
+
 func (o *BuilderAction) Payload(c *Config) (interface{}, error)                { return o.payload(c) }
 func (o *BuilderAction) Execute(c *Config, p interface{}) (interface{}, error) { return o.execute(c, p) }
 func (o *BuilderAction) Additions(c *Config) map[string]Action                 { return o.additions(c) }

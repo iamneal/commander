@@ -14,7 +14,7 @@ package main
 
 import (
     "fmt"
-	"github.com/iamneal/commander"
+    "github.com/iamneal/commander"
 )
 
 func main() {
@@ -29,18 +29,18 @@ func main() {
         var cmd string
         fmt.Scanln("what command to run? ", &cmd)
 
-        // command is ran here, if the command name is not found, the 
-        // help command is ran commands are run in parallel, but it 
+        // command is ran here. If the command name is not found, the 
+        // help command is ran. Commands are run in parallel, but it 
         // is safe to treat them as having sole access to the config
-        // for the length of the action the result is not returned, 
-        // it can be accessed through the lookup command, and the action name
+        // for the length of the action. 
+        // the returned "Work"  will be populated when the work is done.
         if err := commands.Get(cmd)(); err != nil {
             if work, ok: err.(commander.QuitErr); ok {
                 fmt.Println("quitting...")
                 break
             } else {
-                // Wait can be called multiple times, even if the work has been done
-                // Wait blocks till the work has been completed
+                // Wait can be called multiple times, even if the work has been done.
+                // Wait blocks till the work has been completed.
                 work.Wait()
                 fmt.Println(work.Result)
             }
