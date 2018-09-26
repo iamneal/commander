@@ -51,8 +51,6 @@ func main() {
 
 ## TODO
 - write the payload function helpers 
-    also:
-    - payload function from questions
     - payload function from pasted json
     - payload function from file
     - look into reader writer interfaces

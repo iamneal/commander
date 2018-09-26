@@ -93,7 +93,21 @@ func (o *builderAction) WithForkPayloads(p map[string]interface{}) *builderActio
 	o.payload = ForkPayloads(newMap)
 	return o
 }
-func (o *builderAction) WithAggregatePayloadFuncs(p map[string]PayloadFunc) *builderAction {
+func (o *builderAction) WithQuestionsPayload(kvs ...KV) *builderAction {
+	o.payload = func(*Config) (interface{}, error) {
+		res := make(map[string]interface{})
+		for _, kv := range kvs {
+			key, value, err := kv.Scan()
+			if err != nil {
+				return nil, err
+			}
+			res[key] = value
+		}
+		return res, nil
+	}
+	return o
+}
+func (o *builderAction) WithAggregatePayload(p map[string]PayloadFunc) *builderAction {
 	o.payload = CombinePayloads(p)
 	return o
 }
@@ -101,13 +115,23 @@ func (o *builderAction) WithExecute(result interface{}, err error) *builderActio
 	o.execute = func(*Config, interface{}) (interface{}, error) { return result, err }
 	return o
 }
-func (o *builderAction) WithExecuteOfMapPayload(pFunc func(*Config, map[string]interface{}) (interface{}, error)) *builderAction {
-	o.execute = func(c *Config, p interface{}) (interface{}, error) {
-		converted, ok := p.(map[string]interface{})
+func (o *builderAction) WithExecuteOfMapPayload(p func(*Config, map[string]interface{}) (interface{}, error)) *builderAction {
+	o.execute = func(c *Config, q interface{}) (interface{}, error) {
+		converted, ok := q.(map[string]interface{})
 		if !ok {
-			return nil, TypeConvertErr(p, map[string]interface{}{})
+			return nil, TypeConvertErr(q, map[string]interface{}{})
 		}
-		return pFunc(c, converted)
+		return p(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithExecuteOfSlicePayload(p func(*Config, []interface{}) (interface{}, error)) *builderAction {
+	o.execute = func(c *Config, q interface{}) (interface{}, error) {
+		converted, ok := q.([]interface{})
+		if !ok {
+			return nil, TypeConvertErr(q, []interface{}{})
+		}
+		return p(c, converted)
 	}
 	return o
 }

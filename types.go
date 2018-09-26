@@ -34,19 +34,91 @@ type ExecuteFunc func(*Config, interface{}) (interface{}, error)
 // g(in)
 // // is the same as
 // if eout, err := e(ein); err == nil { f(eout) }
-//
-func (e ExecuteFunc) Chain(f ExecuteFunc) ExecuteFunc {
+func (e ExecuteFunc) Chain(fs ...ExecuteFunc) ExecuteFunc {
 	return func(conf *Config, payload interface{}) (interface{}, error) {
 		res, err := e(conf, payload)
-		if err == nil {
-			return f(conf, res)
+		if err != nil {
+			return nil, err
 		}
-		return nil, err
+		for _, f := range fs {
+			res, err = f(conf, res)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return res, nil
 	}
 }
 
 // the function signiture of the Action.Payload function
 type PayloadFunc func(*Config) (interface{}, error)
+
+// Returns a new PayloadFunc composed of p and all of the PayloadFuncs in qs (q).
+// The result of the returned PayloadFunc will always be []interface{}.
+// If the results of p or q are already []inteface{},
+// the results are concated. If the results are not slices, they are appended
+func (p PayloadFunc) ChainSlice(qs ...PayloadFunc) PayloadFunc {
+	return func(conf *Config) (interface{}, error) {
+		var res []interface{}
+		pres, err := p(conf)
+		if err != nil {
+			return nil, err
+		}
+		if r, ok := pres.([]interface{}); ok {
+			res = r
+		} else {
+			res = append(res, pres)
+		}
+		for _, q := range qs {
+			qres, err := q(conf)
+			if err != nil {
+				return nil, err
+			}
+			if r, ok := qres.([]interface{}); ok {
+				res = append(res, r...)
+			} else {
+				res = append(res, qres)
+			}
+		}
+		return res, nil
+	}
+}
+
+// Returns a new PayloadFunc composed of p and all of the PayloadFuncs in qs (q).
+// The result of the returned PayloadFunc will always be map[string]interface{}.
+// If the results of p or q are already map[string]inteface{},
+// the results are combined, where q overrides p's results if duplicate keys are present.
+// If the result of p is not a map[string]inteface{}, the result will occupy the key: "" in the return map
+// If the result of q is not a map[string]interface{}, the result will occupy the key: "0","1","..." in the return map
+func (p PayloadFunc) ChainMap(qs ...PayloadFunc) PayloadFunc {
+	return func(conf *Config) (interface{}, error) {
+		var res map[string]interface{}
+		pres, err := p(conf)
+		if err != nil {
+			return nil, err
+		}
+		if r, ok := pres.(map[string]interface{}); ok {
+			res = r
+		} else {
+			res = map[string]interface{}{"": pres}
+		}
+		for i, q := range qs {
+			qres, err := q(conf)
+			if err != nil {
+				return nil, err
+			}
+			if r, ok := qres.(map[string]interface{}); ok {
+				for k, v := range r {
+					res[k] = v
+				}
+			} else {
+				res[string(i)] = qres
+			}
+		}
+		return res, nil
+
+	}
+}
 
 // the function signiture of the Action.Addtions function
 type AdditionsFunc func(*Config) map[string]Action
@@ -59,6 +131,38 @@ type TagsFunc func() []string
 
 type Name interface {
 	Name() string
+}
+
+// represents a Question that is scannable
+// KV.Q is the question that will be given to scan
+// KV.Key is the key field, or variable name, that was scanned
+// KV.Hint is variable that matches the type that needs to be scanned into
+type KV struct {
+	Q    string
+	Key  string
+	Hint interface{}
+}
+
+func NewKV(q, key string, hint interface{}) KV {
+	if hint == nil {
+		hint = ""
+	}
+	return KV{
+		Q:    q,
+		Key:  key,
+		Hint: hint,
+	}
+}
+
+func (q KV) Scan() (string, interface{}, error) {
+	return q.Key, q.Hint, scan(q.Q, &q.Hint)
+}
+func (q KV) MustScan() (string, interface{}) {
+	if k, v, err := q.Scan(); err != nil {
+		panic("error scanning a value that must be scanned: " + err.Error())
+	} else {
+		return k, v
+	}
 }
 
 type Work struct {
