@@ -6,9 +6,13 @@ import (
 	"strings"
 )
 
+// a Map of actions that do work in order, mutating Commands.conf
+// actions can be overridden by calling Commands.Set, and performed concurrently
+// by executing the function returned from Commands.Get
+// default actions are provided, though they, as well, can be overridden
 type Commands struct {
 	cmds     map[string]Action
-	workChan *WorkChan
+	workChan *workChan
 	conf     *Config
 }
 
@@ -25,10 +29,10 @@ func (c *Commands) new(conf *Config) *Commands {
 	c.Set(HelpAction{cmds: c})
 	c.Set(LoadAction{})
 	c.Set(SaveAction{})
-	c.Set(BuildOverriding(NoPayloadAction{}.New("print-config", func(c *Config) (interface{}, error) {
+	c.Set(Build().WithName("print-config").WithExecuteOfNoPayload(func(c *Config) (interface{}, error) {
 		fmt.Println(prettyJ(c))
 		return *c, nil
-	})).WithTagsV("print-config", "default"))
+	}).WithTagsV("print-config", "default"))
 	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
 	c.Set(Build().WithName("quit").WithPayload(nil, QuitError{}).WithTagsV("quit", "default"))
 	c.Set(Build().WithName("lookup").WithTagsV("lookup", "default").
@@ -178,7 +182,7 @@ func (c *Commands) processor(a Action) func() (*Work, error) {
 		if err != nil {
 			return nil, err
 		}
-		work := WorkFromAction(a, payload)
+		work := workFromAction(a, payload)
 		c.workChan.Queue(work)
 		go func() {
 			if err := work.Wait(context.Background()); err == nil {

@@ -50,16 +50,15 @@ func main() {
 ```
 
 ## TODO
-- make a saveResult and loadResult action to copy results from memory to a spot in the config, or back
-- write the payload function helpers (payload func() interface, ensure payload function exists on v2 structure)
+- write the payload function helpers 
     also:
     - payload function from questions
     - payload function from pasted json
     - payload function from file
     - look into reader writer interfaces
     - payload function from scanner
-- write an action combiner that can take a seq of actions and gives the result of each previous action
-    to the next action, and not saving the intermediate steps
 - write a function that takes a grpc interface and gives you a commands object
     it will have:
     - grpc actions converters for client stream and server stream actions
+
+## ROADMAP

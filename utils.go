@@ -140,6 +140,10 @@ func prettyJ(data interface{}) string {
 	return buffer.String()
 }
 
+// prettify the data, if it inst able to be encoded,
+// it returns a json string with an error field, and string message
+func PrettyJson(data interface{}) string { return prettyJ(data) }
+
 func dashes(s string) {
 	fmt.Printf("---------%s---------\n", s)
 }

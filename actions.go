@@ -4,12 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"strconv"
+	"strings"
 	"time"
 )
 
+// Actions are a helper class for Commands
+// They can be created, but the Payload and Execute functions are meant
+// to be used by the Command that holds the Action.
+// Actions are performed in two stages
+// on the main thread with the Comamnds, payload is called with the
+// Config given to the Commands.
+// though not enforeced by the api (yet) Conifg should be treated as read only at this point
+// execute is performed nonblocking, and the result is returned which can then be waited on
 type Action interface {
 	Name
-	// use questions to setup a payload and return it, since questions can only be run on the main thread
+	Desc() string
 	Payload(*Config) (interface{}, error)
 	// the interface as an arg will be the one from the payload, NO QUESTIONS can be setup from here, it will be
 	// ran async in a go routine
@@ -19,8 +29,9 @@ type Action interface {
 	Tags() []string
 }
 
-type BuilderAction struct {
+type builderAction struct {
 	name      NameFunc
+	desc      DescFunc
 	payload   PayloadFunc
 	execute   ExecuteFunc
 	additions AdditionsFunc
@@ -28,66 +39,138 @@ type BuilderAction struct {
 	tags      TagsFunc
 }
 
-func (o *BuilderAction) WithNameFunc(n NameFunc) *BuilderAction {
+func (o *builderAction) WithNameFunc(n NameFunc) *builderAction {
 	o.name = n
 	return o
 }
-func (o *BuilderAction) WithPayloadFunc(p PayloadFunc) *BuilderAction {
+func (o *builderAction) WithDescFunc(d DescFunc) *builderAction {
+	o.desc = d
+	return o
+}
+func (o *builderAction) WithPayloadFunc(p PayloadFunc) *builderAction {
 	o.payload = p
 	return o
 }
-func (o *BuilderAction) WithExecuteFunc(e ExecuteFunc) *BuilderAction {
+func (o *builderAction) WithExecuteFunc(e ExecuteFunc) *builderAction {
 	o.execute = e
 	return o
 }
-func (o *BuilderAction) WithAdditionsFunc(a AdditionsFunc) *BuilderAction {
+func (o *builderAction) WithAdditionsFunc(a AdditionsFunc) *builderAction {
 	o.additions = a
 	return o
 }
-func (o *BuilderAction) WithRemovalsFunc(r RemovalsFunc) *BuilderAction {
+func (o *builderAction) WithRemovalsFunc(r RemovalsFunc) *builderAction {
 	o.removals = r
 	return o
 }
-func (o *BuilderAction) WithTagsFunc(t TagsFunc) *BuilderAction {
+func (o *builderAction) WithTagsFunc(t TagsFunc) *builderAction {
 	o.tags = t
 	return o
 }
-func (o *BuilderAction) WithName(n string) *BuilderAction {
+func (o *builderAction) WithName(n string) *builderAction {
 	o.name = func() string { return n }
 	return o
 }
-func (o *BuilderAction) WithPayload(p interface{}, err error) *BuilderAction {
+func (o *builderAction) WithDesc(d string) *builderAction {
+	o.desc = func() string { return d }
+	return o
+}
+func (o *builderAction) WithPayload(p interface{}, err error) *builderAction {
 	o.payload = func(*Config) (interface{}, error) { return p, err }
 	return o
 }
-func (o *BuilderAction) WithExecute(result interface{}, err error) *BuilderAction {
+func (o *builderAction) WithForkPayloadsFunc(p map[string]PayloadFunc) *builderAction {
+	o.payload = ForkPayloads(p)
+	return o
+}
+func (o *builderAction) WithForkPayloads(p map[string]interface{}) *builderAction {
+	newMap := make(map[string]PayloadFunc)
+	for k, v := range p {
+		newMap[k] = func(*Config) (interface{}, error) {
+			return v, nil
+		}
+	}
+	o.payload = ForkPayloads(newMap)
+	return o
+}
+func (o *builderAction) WithAggregatePayloadFuncs(p map[string]PayloadFunc) *builderAction {
+	o.payload = CombinePayloads(p)
+	return o
+}
+func (o *builderAction) WithExecute(result interface{}, err error) *builderAction {
 	o.execute = func(*Config, interface{}) (interface{}, error) { return result, err }
 	return o
 }
-func (o *BuilderAction) WithAdditions(a map[string]Action) *BuilderAction {
+func (o *builderAction) WithExecuteOfMapPayload(pFunc func(*Config, map[string]interface{}) (interface{}, error)) *builderAction {
+	o.execute = func(c *Config, p interface{}) (interface{}, error) {
+		converted, ok := p.(map[string]interface{})
+		if !ok {
+			return nil, TypeConvertErr(p, map[string]interface{}{})
+		}
+		return pFunc(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithExecuteOfStringPayload(pFunc func(*Config, string) (interface{}, error)) *builderAction {
+	o.execute = func(c *Config, p interface{}) (interface{}, error) {
+		converted, ok := p.(string)
+		if !ok {
+			return nil, TypeConvertErr(p, "")
+		}
+		return pFunc(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithExecuteOfInt64Payload(pFunc func(*Config, int64) (interface{}, error)) *builderAction {
+	o.execute = func(c *Config, p interface{}) (interface{}, error) {
+		converted, ok := p.(int64)
+		if !ok {
+			err := TypeConvertErr(p, "")
+			convString, ok := p.(string)
+			if !ok {
+				return nil, err
+			}
+			converted, err = strconv.ParseInt(convString, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return pFunc(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithExecuteOfNoPayload(pFunc func(*Config) (interface{}, error)) *builderAction {
+	o.execute = func(c *Config, _ interface{}) (interface{}, error) {
+		return pFunc(c)
+	}
+	return o
+}
+func (o *builderAction) WithAdditions(a map[string]Action) *builderAction {
 	o.additions = func(*Config) map[string]Action { return a }
 	return o
 }
-func (o *BuilderAction) WithRemovals(r []string) *BuilderAction {
+func (o *builderAction) WithRemovals(r []string) *builderAction {
 	o.removals = func() []string { return r }
 	return o
 }
-func (o *BuilderAction) WithRemovalsV(rs ...string) *BuilderAction { return o.WithRemovals(rs) }
-func (o *BuilderAction) WithTags(t []string) *BuilderAction {
+func (o *builderAction) WithRemovalsV(rs ...string) *builderAction { return o.WithRemovals(rs) }
+func (o *builderAction) WithTags(t []string) *builderAction {
 	o.tags = func() []string { return t }
 	return o
 }
-func (o *BuilderAction) WithTagsV(ts ...string) *BuilderAction { return o.WithTags(ts) }
+func (o *builderAction) WithTagsV(ts ...string) *builderAction { return o.WithTags(ts) }
 
-func (o *BuilderAction) Payload(c *Config) (interface{}, error)                { return o.payload(c) }
-func (o *BuilderAction) Execute(c *Config, p interface{}) (interface{}, error) { return o.execute(c, p) }
-func (o *BuilderAction) Additions(c *Config) map[string]Action                 { return o.additions(c) }
-func (o *BuilderAction) Removals() []string                                    { return o.removals() }
-func (o *BuilderAction) Name() string                                          { return o.name() }
-func (o BuilderAction) Tags() []string                                         { return o.tags() }
+func (o *builderAction) Payload(c *Config) (interface{}, error)                { return o.payload(c) }
+func (o *builderAction) Execute(c *Config, p interface{}) (interface{}, error) { return o.execute(c, p) }
+func (o *builderAction) Additions(c *Config) map[string]Action                 { return o.additions(c) }
+func (o *builderAction) Removals() []string                                    { return o.removals() }
+func (o *builderAction) Name() string                                          { return o.name() }
+func (o *builderAction) Desc() string                                          { return o.desc() }
+func (o builderAction) Tags() []string                                         { return o.tags() }
 
-func BuildOverriding(parent Action) *BuilderAction {
-	return &BuilderAction{
+// BETTER DOCUMENTATION COMING
+func BuildOverriding(parent Action) *builderAction {
+	return &builderAction{
 		name:      parent.Name,
 		payload:   parent.Payload,
 		execute:   parent.Execute,
@@ -96,11 +179,14 @@ func BuildOverriding(parent Action) *BuilderAction {
 		tags:      parent.Tags,
 	}
 }
-func Build() *BuilderAction { return BuildOverriding(NopAction{}) }
+
+// BETTER DOCUMENTATION COMING
+func Build() *builderAction { return BuildOverriding(NopAction{}) }
 
 type NopAction struct{}
 
 func (NopAction) Name() string                                              { return "" }
+func (NopAction) Desc() string                                              { return "" }
 func (NopAction) Payload(*Config) (_ interface{}, _ error)                  { return }
 func (NopAction) Execute(c *Config, p interface{}) (_ interface{}, _ error) { return }
 func (NopAction) Additions(c *Config) map[string]Action                     { return nil }
@@ -143,16 +229,17 @@ func (s LoadAction) Execute(conf *Config, payload interface{}) (interface{}, err
 	*conf = c
 	return nil, e.Err()
 }
-func (s LoadAction) Additions(*Config) map[string]Action { return nil }
-func (s LoadAction) Removals() []string                  { return nil }
-func (s LoadAction) Name() string                        { return "load" }
-func (s LoadAction) Tags() []string                      { return []string{"load", "default"} }
+func (LoadAction) Additions(*Config) map[string]Action { return nil }
+func (LoadAction) Removals() []string                  { return nil }
+func (LoadAction) Name() string                        { return "load" }
+func (LoadAction) Desc() string                        { return "load from a file" }
+func (LoadAction) Tags() []string                      { return []string{"load", "default"} }
 
 type HelpAction struct {
 	cmds *Commands
 }
 
-func (s HelpAction) Payload(conf *Config) (_ interface{}, _ error) { return }
+func (HelpAction) Payload(conf *Config) (_ interface{}, _ error) { return }
 func (s HelpAction) Execute(conf *Config, _ interface{}) (interface{}, error) {
 	instructions := "\nplease type a command: \n%s"
 	commands := func() (out string) {
@@ -165,10 +252,11 @@ func (s HelpAction) Execute(conf *Config, _ interface{}) (interface{}, error) {
 
 	return nil, nil
 }
-func (s HelpAction) Additions(*Config) map[string]Action { return nil }
-func (s HelpAction) Removals() []string                  { return nil }
-func (s HelpAction) Name() string                        { return "help" }
-func (s HelpAction) Tags() []string                      { return []string{"default", "help"} }
+func (HelpAction) Additions(*Config) map[string]Action { return nil }
+func (HelpAction) Removals() []string                  { return nil }
+func (HelpAction) Name() string                        { return "help" }
+func (HelpAction) Desc() string                        { return "get help for stuff" }
+func (HelpAction) Tags() []string                      { return []string{"default", "help"} }
 
 type SaveAction struct{}
 
@@ -178,6 +266,7 @@ func (s SaveAction) Payload(c *Config) (interface{}, error) {
 	return filename, scan("type save path, or leave empty for default. \n(%s)", &filename)
 }
 
+// must Always have a string payload that is the filepath to save
 func (s SaveAction) Execute(c *Config, payload interface{}) (interface{}, error) {
 	ans, ok := payload.(string)
 	if !ok {
@@ -197,10 +286,11 @@ func (s SaveAction) Execute(c *Config, payload interface{}) (interface{}, error)
 	}
 	return ans, ioutil.WriteFile(ans, bytes, 0644)
 }
-func (s SaveAction) Additions(*Config) map[string]Action { return nil }
-func (s SaveAction) Removals() []string                  { return nil }
-func (s SaveAction) Name() string                        { return "save" }
-func (s SaveAction) Tags() []string                      { return []string{"save", "default"} }
+func (SaveAction) Additions(*Config) map[string]Action { return nil }
+func (SaveAction) Removals() []string                  { return nil }
+func (SaveAction) Name() string                        { return "save" }
+func (SaveAction) Desc() string                        { return "save the config to a file" }
+func (SaveAction) Tags() []string                      { return []string{"save", "default"} }
 
 type WrapNameAction struct {
 	newName   string
@@ -221,41 +311,21 @@ func (s WrapNameAction) Execute(conf *Config, payload interface{}) (interface{},
 func (s WrapNameAction) Additions(c *Config) map[string]Action { return s.oldAction.Additions(c) }
 func (s WrapNameAction) Removals() []string                    { return s.oldAction.Removals() }
 func (s WrapNameAction) Name() string                          { return s.newName }
+func (s WrapNameAction) Desc() string                          { return s.oldAction.Desc() }
 func (s WrapNameAction) Tags() []string                        { return append(s.Tags(), s.newName) }
 
-func NewNoPayloadAction(name string, exec func(*Config) (interface{}, error)) NoPayloadAction {
-	return NoPayloadAction{}.New(name, exec)
-}
-
-type NoPayloadAction struct {
-	exec func(*Config) (interface{}, error)
-	name string
-}
-
-func (s NoPayloadAction) New(name string, exec func(*Config) (interface{}, error)) NoPayloadAction {
-	s = NoPayloadAction{exec, name}
-	return s
-}
-func (s NoPayloadAction) Payload(*Config) (_ interface{}, _ error) { return }
-func (s NoPayloadAction) Execute(conf *Config, _ interface{}) (interface{}, error) {
-	return s.exec(conf)
-}
-func (s NoPayloadAction) Additions(*Config) map[string]Action { return nil }
-func (s NoPayloadAction) Removals() []string                  { return nil }
-func (s NoPayloadAction) Name() string                        { return s.name }
-func (s NoPayloadAction) Tags() []string                      { return []string{"none"} }
-
+// executes the child actions payload once, then
+// every <tick> seconds till Commands.Get("stop-" + <name>) is called,
+// Watch calls the child action's Execute function with that payload
 type WatchAction struct {
 	cmds   Commands
-	name   string
 	action Action
 	ticker *time.Ticker
 }
 
-func (s WatchAction) New(name string, action Action, cmds Commands) WatchAction {
-	s.name = name
+func (s WatchAction) New(action Action, tick time.Duration, cmds Commands) WatchAction {
 	s.action = action
-	s.ticker = time.NewTicker(10 * time.Second)
+	s.ticker = time.NewTicker(tick)
 	s.cmds = cmds
 
 	return s
@@ -267,23 +337,22 @@ func (w *WatchAction) Payload(conf *Config) (interface{}, error) {
 
 func (w *WatchAction) Execute(conf *Config, payload interface{}) (interface{}, error) {
 	go func() {
-		t := <-w.ticker.C
-		fmt.Printf("triggering watch: %s at: %s\n", w.name, t.Format(time.Kitchen))
+		<-w.ticker.C
 		w.action.Execute(conf, payload)
 	}()
 	return nil, nil
 }
 func (w *WatchAction) Additions(*Config) map[string]Action {
 	return map[string]Action{
-		"stop-" + w.name: NoPayloadAction{}.New("stop-"+w.name, func(c *Config) (interface{}, error) {
+		"stop-" + w.action.Name(): Build().WithExecuteOfNoPayload(func(c *Config) (interface{}, error) {
 			w.ticker.Stop()
 			return nil, nil
 		}),
 	}
 }
 func (w *WatchAction) Removals() []string { return w.action.Removals() }
-func (w *WatchAction) Name() string       { return w.name }
-func (w *WatchAction) Tags() []string     { return []string{"watch", "repeating", w.name} }
+func (w *WatchAction) Name() string       { return w.action.Name() }
+func (w *WatchAction) Tags() []string     { return []string{"watch", "repeating", w.action.Name()} }
 
 func MakeTrigger(parent Action, children ...Action) Action {
 	m := make(map[string]Action)
@@ -294,8 +363,53 @@ func MakeTrigger(parent Action, children ...Action) Action {
 }
 
 func PrintAction(name, msg string) Action {
-	return NoPayloadAction{}.New(name, func(*Config) (_ interface{}, _ error) {
+	return Build().WithName(name).WithExecuteOfNoPayload(func(*Config) (_ interface{}, _ error) {
 		fmt.Println(msg)
 		return
 	})
+}
+
+// return a Payload function that asks the user to pick between the keys in the map
+// it performs the named PayloadFunction if it exists, and returns its result as the payload
+// unknown keys result in an error
+// TODO
+func ForkPayloads(payloads map[string]PayloadFunc) PayloadFunc {
+	return func(c *Config) (interface{}, error) {
+		temp := ""
+		keys := make([]string, 0)
+		for k, _ := range payloads {
+			keys = append(keys, k)
+
+		}
+		var payloadF PayloadFunc
+		retry(3, func() error {
+			if err := scan("please pick between:"+strings.Join(keys, "\n\t"), &temp); err != nil {
+				return err
+			}
+			f, ok := payloads[temp]
+			if !ok || f == nil {
+				return fmt.Errorf("no payload function named %s", temp)
+			}
+			payloadF = f
+			return nil
+		})
+		return payloadF(c)
+	}
+}
+
+// returns a payload function that always performs all the input payload functions,
+// and returns map[string]inteface{} as its payload
+// This can then be relied on in the ExecuteFunctions to always be castable to map[string]inteface{}
+func CombinePayloads(payloads map[string]PayloadFunc) PayloadFunc {
+	return func(c *Config) (interface{}, error) {
+		resMap := make(map[string]interface{})
+		for k, v := range payloads {
+			if res, err := v(c); err != nil {
+				resMap[k] = err
+			} else {
+				resMap[k] = res
+			}
+		}
+		return resMap, nil
+	}
 }
