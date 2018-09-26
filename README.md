@@ -62,3 +62,4 @@ func main() {
     - grpc actions converters for client stream and server stream actions
 
 ## ROADMAP
+- update the processor internals to be more performant
