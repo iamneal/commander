@@ -382,7 +382,7 @@ func ForkPayloads(payloads map[string]PayloadFunc) PayloadFunc {
 
 		}
 		var payloadF PayloadFunc
-		retry(3, func() error {
+		err := retry(3, func() error {
 			if err := scan("please pick between:"+strings.Join(keys, "\n\t"), &temp); err != nil {
 				return err
 			}
@@ -393,6 +393,9 @@ func ForkPayloads(payloads map[string]PayloadFunc) PayloadFunc {
 			payloadF = f
 			return nil
 		})
+		if err != nil {
+			return nil, err
+		}
 		return payloadF(c)
 	}
 }
