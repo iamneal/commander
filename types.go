@@ -17,6 +17,53 @@ func (QuitError) Error() string {
 // which is less significant
 type Config interface{}
 
+type actionParts struct {
+	name      Name
+	desc      Desc
+	payload   Payload
+	execute   Execute
+	additions Additions
+	removals  Removals
+	tags      Tags
+}
+
+func (a actionParts) Name() Name           { return a.name }
+func (a actionParts) Desc() Desc           { return a.desc }
+func (a actionParts) Payload() Payload     { return a.payload }
+func (a actionParts) Execute() Execute     { return a.execute }
+func (a actionParts) Additions() Additions { return a.additions }
+func (a actionParts) Removals() Removals   { return a.removals }
+func (a actionParts) Tags() Tags           { return a.tags }
+func (a actionParts) Action() Action {
+	return Build().
+		WithNameFunc(a.name).
+		WithDescFunc(a.desc).
+		WithPayloadFunc(a.payload).
+		WithExecuteFunc(a.execute).
+		WithAdditionsFunc(a.additions).
+		WithRemovalsFunc(a.removals).
+		WithTagsFunc(a.tags)
+}
+
+// NopParts returns a new actionParts struct without having to provide an action
+func NopParts() actionParts {
+	return Break(NopAction{})
+}
+
+// Break returns a struct that can access the individual Action functions as
+// Generic Versions  of the interface{} they are each supposed to implement
+func Break(action Action) actionParts {
+	return actionParts{
+		name:      func() string { return action.Name() },
+		desc:      func() string { return action.Desc() },
+		tags:      func() []string { return action.Tags() },
+		removals:  func() []string { return action.Removals() },
+		additions: func(c *Config) map[string]Action { return action.Additions(c) },
+		payload:   func(c *Config) (interface{}, error) { return action.Payload(c) },
+		execute:   func(c *Config, payload interface{}) (interface{}, error) { return action.Execute(c, payload) },
+	}
+}
+
 // The function signiture of Action.Name function
 type Name func() string
 
@@ -150,19 +197,21 @@ type Removals func() []string
 
 func (r Removals) From(s []string) Removals { return func() []string { return s } }
 
-// the function signiture of the Action.Tags function
+// Tags are the function signiture of the Action.Tags function
 type Tags func() []string
 
-// represents a Question that is scannable
-// KV.Q is the question that will be given to scan
-// KV.Key is the key field, or variable name, that was scanned
-// KV.Hint is variable that matches the type that needs to be scanned into
+// KV represents a Question that is scannable.
+// KV.Q is the question that will be given to scan.
+// KV.Key is the key field, or variable name, that was scanned.
+// KV.Hint is variable that matches the type that needs to be scanned into,
 type KV struct {
 	Q    string
 	Key  string
 	Hint interface{}
 }
 
+// NewKV returns a  new KV struct. <hint> will be returned as the default value
+// if an error was encountered during scan
 func NewKV(q, key string, hint interface{}) KV {
 	if hint == nil {
 		hint = ""
@@ -174,6 +223,7 @@ func NewKV(q, key string, hint interface{}) KV {
 	}
 }
 
+// Scan returns the key, value, and any error encountered during fmt.Scanln of user's input
 func (q KV) Scan() (string, interface{}, error) {
 	return q.Key, q.Hint, scan(q.Q, &q.Hint)
 }

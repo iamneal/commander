@@ -23,6 +23,7 @@ go_library(
     srcs = [
         "actions.go",
         "commands.go",
+        "parts.go",
         "types.go",
         "utils.go",
     ],
