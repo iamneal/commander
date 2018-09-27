@@ -18,23 +18,36 @@ func (QuitError) Error() string {
 type Config interface{}
 
 // The function signiture of Action.Name function
-type NameFunc func() string
+type Name func() string
+
+func (n Name) From(s string) Name     { return func() string { return s } }
+func (n Name) PrefixFunc(o Name) Name { return func() string { return o() + n() } }
+func (n Name) Prefix(o string) Name   { return func() string { return o + n() } }
+func (n Name) SuffixFunc(o Name) Name { return func() string { return n() + o() } }
+func (n Name) Suffix(o string) Name   { return func() string { return n() + o } }
 
 // The function signiture of Action.Desc function
-type DescFunc func() string
+type Desc func() string
+
+func (n Desc) From(s string) Desc { return func() string { return s } }
 
 // The function signiture of the Action.Execute function
-type ExecuteFunc func(*Config, interface{}) (interface{}, error)
+type Execute func(*Config, interface{}) (interface{}, error)
 
-// ExecuteFunc's can be merged togther.
+func (e Execute) FromE(f interface{}, err error) Execute {
+	return func(*Config, interface{}) (interface{}, error) { return f, err }
+}
+func (e Execute) From(f interface{}) Execute { return e.FromE(f, nil) }
+
+// Execute's can be merged togther.
 // var ein interface{}
-// var e ExecuteFunc
-// var f ExecuteFunc
+// var e Execute
+// var f Execute
 // g := e.Chain(f)
 // g(in)
 // // is the same as
 // if eout, err := e(ein); err == nil { f(eout) }
-func (e ExecuteFunc) Chain(fs ...ExecuteFunc) ExecuteFunc {
+func (e Execute) Chain(fs ...Execute) Execute {
 	return func(conf *Config, payload interface{}) (interface{}, error) {
 		res, err := e(conf, payload)
 		if err != nil {
@@ -51,13 +64,18 @@ func (e ExecuteFunc) Chain(fs ...ExecuteFunc) ExecuteFunc {
 }
 
 // the function signiture of the Action.Payload function
-type PayloadFunc func(*Config) (interface{}, error)
+type Payload func(*Config) (interface{}, error)
 
-// Returns a new PayloadFunc composed of p and all of the PayloadFuncs in qs (q).
-// The result of the returned PayloadFunc will always be []interface{}.
+func (p Payload) FromE(q interface{}, err error) Payload {
+	return func(*Config) (interface{}, error) { return q, err }
+}
+func (p Payload) From(q interface{}) Payload { return p.FromE(q, nil) }
+
+// Returns a new Payload composed of p and all of the Payloads in qs (q).
+// The result of the returned Payload will always be []interface{}.
 // If the results of p or q are already []inteface{},
 // the results are concated. If the results are not slices, they are appended
-func (p PayloadFunc) ChainSlice(qs ...PayloadFunc) PayloadFunc {
+func (p Payload) ChainSlice(qs ...Payload) Payload {
 	return func(conf *Config) (interface{}, error) {
 		var res []interface{}
 		pres, err := p(conf)
@@ -84,13 +102,13 @@ func (p PayloadFunc) ChainSlice(qs ...PayloadFunc) PayloadFunc {
 	}
 }
 
-// Returns a new PayloadFunc composed of p and all of the PayloadFuncs in qs (q).
-// The result of the returned PayloadFunc will always be map[string]interface{}.
+// Returns a new Payload composed of p and all of the Payloads in qs (q).
+// The result of the returned Payload will always be map[string]interface{}.
 // If the results of p or q are already map[string]inteface{},
 // the results are combined, where q overrides p's results if duplicate keys are present.
 // If the result of p is not a map[string]inteface{}, the result will occupy the key: "" in the return map
 // If the result of q is not a map[string]interface{}, the result will occupy the key: "0","1","..." in the return map
-func (p PayloadFunc) ChainMap(qs ...PayloadFunc) PayloadFunc {
+func (p Payload) ChainMap(qs ...Payload) Payload {
 	return func(conf *Config) (interface{}, error) {
 		var res map[string]interface{}
 		pres, err := p(conf)
@@ -121,17 +139,19 @@ func (p PayloadFunc) ChainMap(qs ...PayloadFunc) PayloadFunc {
 }
 
 // the function signiture of the Action.Addtions function
-type AdditionsFunc func(*Config) map[string]Action
+type Additions func(*Config) map[string]Action
+
+func (a Additions) From(b map[string]Action) Additions {
+	return func(*Config) map[string]Action { return b }
+}
 
 // the function signiture of the Action.Removals function
-type RemovalsFunc func() []string
+type Removals func() []string
+
+func (r Removals) From(s []string) Removals { return func() []string { return s } }
 
 // the function signiture of the Action.Tags function
-type TagsFunc func() []string
-
-type Name interface {
-	Name() string
-}
+type Tags func() []string
 
 // represents a Question that is scannable
 // KV.Q is the question that will be given to scan
@@ -167,7 +187,7 @@ func (q KV) MustScan() (string, interface{}) {
 
 type Work struct {
 	Name    string
-	job     ExecuteFunc
+	job     Execute
 	payload interface{}
 	wait    chan struct{}
 	// job     func(*Config, interface{}) (interface{}, error)

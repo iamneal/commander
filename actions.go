@@ -18,7 +18,7 @@ import (
 // though not enforeced by the api (yet) Conifg should be treated as read only at this point
 // execute is performed nonblocking, and the result is returned which can then be waited on
 type Action interface {
-	Name
+	Name() string
 	Desc() string
 	Payload(*Config) (interface{}, error)
 	// the interface as an arg will be the one from the payload, NO QUESTIONS can be setup from here, it will be
@@ -30,40 +30,40 @@ type Action interface {
 }
 
 type builderAction struct {
-	name      NameFunc
-	desc      DescFunc
-	payload   PayloadFunc
-	execute   ExecuteFunc
-	additions AdditionsFunc
-	removals  RemovalsFunc
-	tags      TagsFunc
+	name      Name
+	desc      Desc
+	payload   Payload
+	execute   Execute
+	additions Additions
+	removals  Removals
+	tags      Tags
 }
 
-func (o *builderAction) WithNameFunc(n NameFunc) *builderAction {
+func (o *builderAction) WithNameFunc(n Name) *builderAction {
 	o.name = n
 	return o
 }
-func (o *builderAction) WithDescFunc(d DescFunc) *builderAction {
+func (o *builderAction) WithDescFunc(d Desc) *builderAction {
 	o.desc = d
 	return o
 }
-func (o *builderAction) WithPayloadFunc(p PayloadFunc) *builderAction {
+func (o *builderAction) WithPayloadFunc(p Payload) *builderAction {
 	o.payload = p
 	return o
 }
-func (o *builderAction) WithExecuteFunc(e ExecuteFunc) *builderAction {
+func (o *builderAction) WithExecuteFunc(e Execute) *builderAction {
 	o.execute = e
 	return o
 }
-func (o *builderAction) WithAdditionsFunc(a AdditionsFunc) *builderAction {
+func (o *builderAction) WithAdditionsFunc(a Additions) *builderAction {
 	o.additions = a
 	return o
 }
-func (o *builderAction) WithRemovalsFunc(r RemovalsFunc) *builderAction {
+func (o *builderAction) WithRemovalsFunc(r Removals) *builderAction {
 	o.removals = r
 	return o
 }
-func (o *builderAction) WithTagsFunc(t TagsFunc) *builderAction {
+func (o *builderAction) WithTagsFunc(t Tags) *builderAction {
 	o.tags = t
 	return o
 }
@@ -79,12 +79,12 @@ func (o *builderAction) WithPayload(p interface{}, err error) *builderAction {
 	o.payload = func(*Config) (interface{}, error) { return p, err }
 	return o
 }
-func (o *builderAction) WithForkPayloadsFunc(p map[string]PayloadFunc) *builderAction {
+func (o *builderAction) WithForkPayloadsFunc(p map[string]Payload) *builderAction {
 	o.payload = ForkPayloads(p)
 	return o
 }
 func (o *builderAction) WithForkPayloads(p map[string]interface{}) *builderAction {
-	newMap := make(map[string]PayloadFunc)
+	newMap := make(map[string]Payload)
 	for k, v := range p {
 		newMap[k] = func(*Config) (interface{}, error) {
 			return v, nil
@@ -107,7 +107,7 @@ func (o *builderAction) WithQuestionsPayload(kvs ...KV) *builderAction {
 	}
 	return o
 }
-func (o *builderAction) WithAggregatePayload(p map[string]PayloadFunc) *builderAction {
+func (o *builderAction) WithAggregatePayload(p map[string]Payload) *builderAction {
 	o.payload = CombinePayloads(p)
 	return o
 }
@@ -206,6 +206,21 @@ func BuildOverriding(parent Action) *builderAction {
 
 // BETTER DOCUMENTATION COMING
 func Build() *builderAction { return BuildOverriding(NopAction{}) }
+
+// TODO sync these up with NopAction Better
+func NewName() Name { return func() string { return "" } }
+func NewDesc() Desc { return func() string { return "" } }
+func NewPayload() Payload {
+	return func(*Config) (_ interface{}, _ error) { return }
+}
+func NewExecute() Execute {
+	return func(c *Config, p interface{}) (_ interface{}, _ error) { return }
+}
+func NewAdditions() Additions {
+	return func(c *Config) map[string]Action { return nil }
+}
+func NewRemovals() Removals { return func() []string { return nil } }
+func NewTags() Tags         { return func() []string { return nil } }
 
 type NopAction struct{}
 
@@ -347,6 +362,10 @@ type WatchAction struct {
 	ticker *time.Ticker
 }
 
+func NewWatchAction(action Action, tick time.Duration, cmds Commands) WatchAction {
+	return WatchAction{}.New(action, tick, cmds)
+}
+
 func (s WatchAction) New(action Action, tick time.Duration, cmds Commands) WatchAction {
 	s.action = action
 	s.ticker = time.NewTicker(tick)
@@ -378,6 +397,13 @@ func (w *WatchAction) Removals() []string { return w.action.Removals() }
 func (w *WatchAction) Name() string       { return w.action.Name() }
 func (w *WatchAction) Tags() []string     { return []string{"watch", "repeating", w.action.Name()} }
 
+func PrintAction(name, msg string) Action {
+	return Build().WithName(name).WithExecuteOfNoPayload(func(*Config) (_ interface{}, _ error) {
+		fmt.Println(msg)
+		return
+	})
+}
+
 func MakeTrigger(parent Action, children ...Action) Action {
 	m := make(map[string]Action)
 	for _, v := range children {
@@ -386,18 +412,11 @@ func MakeTrigger(parent Action, children ...Action) Action {
 	return BuildOverriding(parent).WithAdditions(m)
 }
 
-func PrintAction(name, msg string) Action {
-	return Build().WithName(name).WithExecuteOfNoPayload(func(*Config) (_ interface{}, _ error) {
-		fmt.Println(msg)
-		return
-	})
-}
-
 // return a Payload function that asks the user to pick between the keys in the map
 // it performs the named PayloadFunction if it exists, and returns its result as the payload
 // unknown keys result in an error
 // TODO
-func ForkPayloads(payloads map[string]PayloadFunc) PayloadFunc {
+func ForkPayloads(payloads map[string]Payload) Payload {
 	return func(c *Config) (interface{}, error) {
 		temp := ""
 		keys := make([]string, 0)
@@ -405,7 +424,7 @@ func ForkPayloads(payloads map[string]PayloadFunc) PayloadFunc {
 			keys = append(keys, k)
 
 		}
-		var payloadF PayloadFunc
+		var payloadF Payload
 		err := retry(3, func() error {
 			if err := scan("please pick between:"+strings.Join(keys, "\n\t"), &temp); err != nil {
 				return err
@@ -427,7 +446,7 @@ func ForkPayloads(payloads map[string]PayloadFunc) PayloadFunc {
 // returns a payload function that always performs all the input payload functions,
 // and returns map[string]inteface{} as its payload
 // This can then be relied on in the ExecuteFunctions to always be castable to map[string]inteface{}
-func CombinePayloads(payloads map[string]PayloadFunc) PayloadFunc {
+func CombinePayloads(payloads map[string]Payload) Payload {
 	return func(c *Config) (interface{}, error) {
 		resMap := make(map[string]interface{})
 		for k, v := range payloads {
