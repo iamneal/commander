@@ -26,6 +26,8 @@ func NewCommands(c *Config, actions ...Action) *Commands {
 
 func (c *Commands) new(conf *Config) *Commands {
 	c.conf = conf
+	c.cmds = make(map[string]Action)
+	c.workChan = newWorkChan(10)
 	c.Set(HelpAction{cmds: c})
 	c.Set(LoadAction{})
 	c.Set(SaveAction{})
@@ -60,6 +62,7 @@ func (c *Commands) new(conf *Config) *Commands {
 			return ts, nil
 		}).
 		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
+			fmt.Printf("got payload: '%T', '%#v'\n", payload, payload)
 			ts, ok := payload.([]string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not []string")
@@ -94,6 +97,8 @@ func (c *Commands) new(conf *Config) *Commands {
 
 			return nil, nil
 		}))
+
+	go c.workChan.Start(conf)
 
 	return c
 }
@@ -182,6 +187,7 @@ func (c *Commands) processor(a Action) func() (*Work, error) {
 		if err != nil {
 			return nil, err
 		}
+		// fmt.Printf("payload: %#v\n", payload)
 		work := workFromAction(a, payload)
 		c.workChan.Queue(work)
 		go func() {

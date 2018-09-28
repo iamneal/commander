@@ -39,6 +39,21 @@ type builderAction struct {
 	tags      Tags
 }
 
+// BETTER DOCUMENTATION COMING
+func BuildOverriding(parent Action) *builderAction {
+	return &builderAction{
+		name:      parent.Name,
+		payload:   parent.Payload,
+		execute:   parent.Execute,
+		additions: parent.Additions,
+		removals:  parent.Removals,
+		tags:      parent.Tags,
+	}
+}
+
+// BETTER DOCUMENTATION COMING
+func Build() *builderAction { return BuildOverriding(NopAction{}) }
+
 func (o *builderAction) WithNameFunc(n Name) *builderAction {
 	o.name = n
 	return o
@@ -184,6 +199,9 @@ func (o *builderAction) WithTags(t []string) *builderAction {
 }
 func (o *builderAction) WithTagsV(ts ...string) *builderAction { return o.WithTags(ts) }
 
+// Break this action into a group of its parts
+func (o *builderAction) Break() actionParts { return Break(o) }
+
 func (o *builderAction) Payload(c *Config) (interface{}, error)                { return o.payload(c) }
 func (o *builderAction) Execute(c *Config, p interface{}) (interface{}, error) { return o.execute(c, p) }
 func (o *builderAction) Additions(c *Config) map[string]Action                 { return o.additions(c) }
@@ -191,21 +209,6 @@ func (o *builderAction) Removals() []string                                    {
 func (o *builderAction) Name() string                                          { return o.name() }
 func (o *builderAction) Desc() string                                          { return o.desc() }
 func (o builderAction) Tags() []string                                         { return o.tags() }
-
-// BETTER DOCUMENTATION COMING
-func BuildOverriding(parent Action) *builderAction {
-	return &builderAction{
-		name:      parent.Name,
-		payload:   parent.Payload,
-		execute:   parent.Execute,
-		additions: parent.Additions,
-		removals:  parent.Removals,
-		tags:      parent.Tags,
-	}
-}
-
-// BETTER DOCUMENTATION COMING
-func Build() *builderAction { return BuildOverriding(NopAction{}) }
 
 // TODO sync these up with NopAction Better
 func NewName() Name { return func() string { return "" } }
@@ -415,7 +418,6 @@ func MakeTrigger(parent Action, children ...Action) Action {
 // return a Payload function that asks the user to pick between the keys in the map
 // it performs the named PayloadFunction if it exists, and returns its result as the payload
 // unknown keys result in an error
-// TODO
 func ForkPayloads(payloads map[string]Payload) Payload {
 	return func(c *Config) (interface{}, error) {
 		temp := ""

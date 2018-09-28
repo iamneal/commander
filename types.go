@@ -81,12 +81,17 @@ func (n Desc) From(s string) Desc { return func() string { return s } }
 // The function signiture of the Action.Execute function
 type Execute func(*Config, interface{}) (interface{}, error)
 
+// FromE's input matches the output of a Execute function.
+// So this creates an Execute function out of the output of a ran Execute function
 func (e Execute) FromE(f interface{}, err error) Execute {
 	return func(*Config, interface{}) (interface{}, error) { return f, err }
 }
+
+// From is a shortcut for `Execute{}.FromE(res, nil)`
+// where <res> is the result of some Execute function
 func (e Execute) From(f interface{}) Execute { return e.FromE(f, nil) }
 
-// Execute's can be merged togther.
+// Chain is used to merge together Execute functions.
 // var ein interface{}
 // var e Execute
 // var f Execute
@@ -203,29 +208,62 @@ type Tags func() []string
 // KV represents a Question that is scannable.
 // KV.Q is the question that will be given to scan.
 // KV.Key is the key field, or variable name, that was scanned.
-// KV.Hint is variable that matches the type that needs to be scanned into,
+// KV.Hint is the type of variable that to the type that needs to be.
+// STR = string, INT = int64, FLO = float64
 type KV struct {
-	Q    string
-	Key  string
-	Hint interface{}
+	Q       string
+	Key     string
+	Hint    ScanType
+	Default interface{}
 }
 
-// NewKV returns a  new KV struct. <hint> will be returned as the default value
-// if an error was encountered during scan
-func NewKV(q, key string, hint interface{}) KV {
-	if hint == nil {
-		hint = ""
-	}
-	return KV{
+// NewKV returns a  new KV struct. <hint> will be the type of value used.
+func NewKV(q, key string, hint ScanType) KV {
+	kv := KV{
 		Q:    q,
 		Key:  key,
 		Hint: hint,
 	}
+	switch hint {
+	case STR:
+		kv.Default = ""
+	case INT:
+		kv.Default = int64(0)
+	case FLO:
+		kv.Default = float64(0)
+	}
+	return kv
+}
+
+// WithDefault returns this KV struct, but with a different Default value for if the call to KV.Scan fails
+func (q KV) WithDefault(def interface{}) KV {
+	q.Default = def
+	return q
 }
 
 // Scan returns the key, value, and any error encountered during fmt.Scanln of user's input
 func (q KV) Scan() (string, interface{}, error) {
-	return q.Key, q.Hint, scan(q.Q, &q.Hint)
+	// return the result if err is nil, otherwise return the default
+	handleScan := func(res interface{}, err error) (interface{}, error) {
+		if err != nil {
+			return q.Default, err
+		}
+		return res, err
+	}
+	var val interface{}
+	var err error
+	switch q.Hint {
+	case STR:
+		p := ""
+		val, err = handleScan(p, scan(q.Q, &p))
+	case INT:
+		p := int64(0)
+		val, err = handleScan(p, scan(q.Q, &p))
+	case FLO:
+		p := float64(0)
+		val, err = handleScan(p, scan(q.Q, &p))
+	}
+	return q.Key, val, err
 }
 func (q KV) MustScan() (string, interface{}) {
 	if k, v, err := q.Scan(); err != nil {
@@ -235,6 +273,26 @@ func (q KV) MustScan() (string, interface{}) {
 	}
 }
 
+type ScanType int
+
+const (
+	STR ScanType = iota
+	INT
+	FLO
+)
+
+// Adds this kv to the map parameter
+func (q KV) AddTo(m map[string]KV) { m[q.Key] = q }
+
+// returns a map of all provided the KVs with key being KV.Key and value being the KV itself
+func MapKVs(kvs ...KV) map[string]KV {
+	out := make(map[string]KV)
+	for _, v := range kvs {
+		out[v.Key] = v
+	}
+	return out
+}
+
 type Work struct {
 	Name    string
 	job     Execute
@@ -242,7 +300,10 @@ type Work struct {
 	wait    chan struct{}
 	// job     func(*Config, interface{}) (interface{}, error)
 	// only populated after Do is called on the result
+	Success    bool
+	Failure    bool
 	Result     interface{}
+	err        error
 	FinishedAt time.Time
 	CreatedAt  time.Time
 }
@@ -251,6 +312,7 @@ func workFromAction(a Action, payload interface{}) *Work {
 	return &Work{
 		Name:      a.Name(),
 		job:       a.Execute,
+		payload:   payload,
 		wait:      make(chan struct{}, 1),
 		CreatedAt: time.Now(),
 	}
@@ -265,6 +327,10 @@ func (w *Work) Wait(ctx context.Context) error {
 	}
 }
 
+func (w *Work) Res() (interface{}, error) {
+	return w.Result, w.err
+}
+
 func (w *Work) do(conf *Config) error {
 	defer func() {
 		close(w.wait)
@@ -273,12 +339,18 @@ func (w *Work) do(conf *Config) error {
 	res, err := w.job(conf, w.payload)
 	w.FinishedAt = time.Now()
 	if err != nil {
-		w.Result = err
+		w.Success = false
+		w.Failure = true
+		w.Result = fmt.Sprintf(`{"error": true, "message": "%s"}`, err)
+		w.err = err
 		return err
+	} else {
+		w.Success = true
+		w.Failure = false
+		w.Result = res
+		w.err = nil
+		return nil
 	}
-	w.Result = res
-
-	return nil
 }
 
 type workChan struct {
@@ -293,6 +365,7 @@ func newWorkChan(buff int64) *workChan {
 	}
 }
 func (w *workChan) Start(conf *Config) {
+	fmt.Printf("started the work chan\n")
 	for v := range w.queue {
 		w.CachedResults[v.Name] = v
 		v.do(conf)
