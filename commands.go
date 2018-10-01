@@ -11,49 +11,64 @@ import (
 // by executing the function returned from Commands.Get
 // default actions are provided, though they, as well, can be overridden
 type Commands struct {
+	opts     []opt
 	cmds     map[string]Action
 	workChan *workChan
 	conf     *Config
+	last     *Action
 }
 
-func NewCommands(c *Config, actions ...Action) *Commands {
-	cmds := (&Commands{}).new(c)
-	for _, a := range actions {
-		cmds.Set(a)
-	}
+func NewCommands(c *Config, opts ...opt) *Commands {
+	cmds := (&Commands{}).New(c, opts)
 	return cmds
 }
 
-func (c *Commands) new(conf *Config) *Commands {
+func (c *Commands) New(conf *Config, opts []opt) *Commands {
 	c.conf = conf
+	c.opts = opts
 	c.cmds = make(map[string]Action)
 	c.workChan = newWorkChan(10)
 	c.Set(HelpAction{cmds: c})
 	c.Set(LoadAction{})
 	c.Set(SaveAction{})
-	c.Set(Build().WithName("print-config").WithExecuteOfNoPayload(func(c *Config) (interface{}, error) {
+	c.Set(Build().WithNameV("print-config").WithExecuteVoid(func(c *Config) (interface{}, error) {
 		fmt.Println(prettyJ(c))
 		return *c, nil
-	}).WithTagsV("print-config", "default"))
-	c.Set(PrintAction("tags", "all known tags:\n"+strings.Join(c.KnownTags(), "\n\t")))
-	c.Set(Build().WithName("quit").WithPayload(nil, QuitError{}).WithTagsV("quit", "default"))
-	c.Set(Build().WithName("lookup").WithTagsV("lookup", "default").
-		WithPayloadFunc(func(*Config) (interface{}, error) {
+	}).WithTagsV("default"))
+	c.Set(Build().WithNameV("tags").WithVoidExecuteVoid(func(_ *Config) error {
+		fmt.Printf("Known Tags:\n\t%v\n", strings.Join(c.KnownTags(), "\n\t"))
+		return nil
+	}).WithTagsV("default"))
+	c.Set(Build().WithNameV("last").WithPayload(func(_ *Config) (interface{}, error) {
+		if c.last == nil {
+			return nil, Skip
+		}
+		return c.workChan.CachedResults[(*c.last).Name()], nil
+	}).WithExecute(func(_ *Config, p interface{}) (interface{}, error) {
+		fmt.Printf("\n%s\n", PrettyJson(p))
+		return p, nil
+	}).WithTagsV("default"))
+	c.Set(Build().WithNameV("quit").WithPayloadV(nil, Quit).WithTagsV("default"))
+	c.Set(Build().WithNameV("lookup").WithTagsV("default").
+		WithPayload(func(*Config) (interface{}, error) {
 			var alias string
-			return alias, scan("lookup last result to which command?", &alias)
+			if err := scan("lookup last result to which command?", &alias); err != nil {
+				return nil, err
+			}
+			return alias, nil
 		}).
-		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
+		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
 			name, ok := payload.(string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not string %#v", name)
 			}
 
-			fmt.Printf("result to %s:\n%v\n", name, prettyJ(c.workChan.CachedResults[name]))
+			fmt.Printf("result to %s:\n %v\n", name, prettyJ(c.workChan.CachedResults[name]))
 
-			return nil, nil
+			return c.workChan.CachedResults[name], nil
 		}))
-	c.Set(Build().WithName("filter").WithTagsV("filter", "default").
-		WithPayloadFunc(func(*Config) (interface{}, error) {
+	c.Set(Build().WithNameV("filter").WithTagsV("default").
+		WithPayload(func(*Config) (interface{}, error) {
 			tags := ""
 			if err := scan("enter tags to filter by separated by space:", &tags); err != nil {
 				return nil, err
@@ -61,28 +76,27 @@ func (c *Commands) new(conf *Config) *Commands {
 			ts := strings.Split(tags, " \t")
 			return ts, nil
 		}).
-		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
-			fmt.Printf("got payload: '%T', '%#v'\n", payload, payload)
+		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
 			ts, ok := payload.([]string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not []string")
 			}
 
-			msg := fmt.Sprint("actions in tag group:\n%v\n", ts)
+			msg := fmt.Sprintf("actions in tag group:\n %+v \n", ts)
 
 			for _, v := range c.FilterActions(ts...) {
 				msg += "\t" + v.Name() + "\n"
 			}
 			fmt.Print(msg)
 
-			return nil, nil
+			return ts, nil
 		}))
-	c.Set(Build().WithName("aliases").WithTagsV("aliases", "default").
-		WithPayloadFunc(func(*Config) (interface{}, error) {
+	c.Set(Build().WithNameV("aliases").WithTagsV("default").
+		WithPayload(func(*Config) (interface{}, error) {
 			var alias string
 			return alias, scan("alias to which command?", &alias)
 		}).
-		WithExecuteFunc(func(_ *Config, payload interface{}) (interface{}, error) {
+		WithExecute(func(_ *Config, payload interface{}) (interface{}, error) {
 			ts, ok := payload.(string)
 			if !ok {
 				return nil, fmt.Errorf("payload was not string")
@@ -95,7 +109,7 @@ func (c *Commands) new(conf *Config) *Commands {
 			}
 			fmt.Print(msg)
 
-			return nil, nil
+			return ts, nil
 		}))
 
 	go c.workChan.Start(conf)
@@ -174,22 +188,41 @@ func (c *Commands) KnownTags() (out []string) {
 			o[j] = true
 		}
 	}
-	for k, _ := range o {
+	for k := range o {
 		out = append(out, k)
 	}
 	return
 }
 
 func (c *Commands) processor(a Action) func() (*Work, error) {
+	setLast := func() bool {
+		for _, v := range a.Tags() {
+			if v == "default" {
+				return false
+			}
+		}
+		return true
+	}
+	// the exact same as A, but with a No-op execute func
+	skipA := Override(a).WithExecute(NopParts().Execute())
 	return func() (*Work, error) {
 		dashes(fmt.Sprintf("executing action %s", a.Name()))
+
 		payload, err := a.Payload(c.conf)
-		if err != nil {
+		var work *Work
+		if _, ok := err.(SkipExecute); ok {
+			fmt.Println("skipping execution function")
+			work = workFromAction(skipA, payload)
+			close(work.wait)
+		} else if err != nil {
 			return nil, err
+		} else {
+			work = workFromAction(a, payload)
+			c.workChan.Queue(work)
 		}
-		// fmt.Printf("payload: %#v\n", payload)
-		work := workFromAction(a, payload)
-		c.workChan.Queue(work)
+		if setLast() {
+			c.last = &a
+		}
 		go func() {
 			if err := work.Wait(context.Background()); err == nil {
 				for k, v := range a.Additions(c.conf) {

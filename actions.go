@@ -39,8 +39,12 @@ type builderAction struct {
 	tags      Tags
 }
 
-// BETTER DOCUMENTATION COMING
-func BuildOverriding(parent Action) *builderAction {
+// Override takes a parent Action as input, and returns an action builder
+// Use With* methods on the action builder to override Different portions of the
+// parent action.
+// The builderAction satisfies the Action interface, so it can, itself, be given
+// to Override().
+func Override(parent Action) *builderAction {
 	return &builderAction{
 		name:      parent.Name,
 		payload:   parent.Payload,
@@ -51,54 +55,91 @@ func BuildOverriding(parent Action) *builderAction {
 	}
 }
 
-// BETTER DOCUMENTATION COMING
-func Build() *builderAction { return BuildOverriding(NopAction{}) }
+// Build is a shortcut for calling Override(NopAction{}).  NopAction being an empty action
+// that does nothing, this is the starting point for building Actions from scratch with
+// The builderAction.
+func Build() *builderAction { return Override(NopAction{}) }
 
-func (o *builderAction) WithNameFunc(n Name) *builderAction {
+// WithName will return the result of "n" when the action's Name() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithName(n Name) *builderAction {
 	o.name = n
 	return o
 }
-func (o *builderAction) WithDescFunc(d Desc) *builderAction {
+
+// WithDesc will return the result of "d" when the action's Desc() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithDesc(d Desc) *builderAction {
 	o.desc = d
 	return o
 }
-func (o *builderAction) WithPayloadFunc(p Payload) *builderAction {
+
+// WithPayload will return the result of "p" when the action's Payload() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithPayload(p Payload) *builderAction {
 	o.payload = p
 	return o
 }
-func (o *builderAction) WithExecuteFunc(e Execute) *builderAction {
+
+// WithExecute will return the result of "e" when the action's Execute() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithExecute(e Execute) *builderAction {
 	o.execute = e
 	return o
 }
-func (o *builderAction) WithAdditionsFunc(a Additions) *builderAction {
+
+// WithAdditions will return the result of "a" when the action's Additions() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithAdditions(a Additions) *builderAction {
 	o.additions = a
 	return o
 }
-func (o *builderAction) WithRemovalsFunc(r Removals) *builderAction {
+
+// WithRemovals will return the result of "r" when the action's Removal() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithRemovals(r Removals) *builderAction {
 	o.removals = r
 	return o
 }
-func (o *builderAction) WithTagsFunc(t Tags) *builderAction {
+
+// WithTags will return the result of "t" when the action's Tags() function is called.
+// it returns itself for chaining.
+func (o *builderAction) WithTags(t Tags) *builderAction {
 	o.tags = t
 	return o
 }
-func (o *builderAction) WithName(n string) *builderAction {
+
+// WithNameV creates a new Name func that returns n when the actions Name() method is called.
+// it returns itself for chaining.
+func (o *builderAction) WithNameV(n string) *builderAction {
 	o.name = func() string { return n }
 	return o
 }
-func (o *builderAction) WithDesc(d string) *builderAction {
+func (o *builderAction) WithDescV(d string) *builderAction {
 	o.desc = func() string { return d }
 	return o
 }
-func (o *builderAction) WithPayload(p interface{}, err error) *builderAction {
+
+// WithPayload creates a new Payload func that returns "p" and "err" when
+// the builderAction's Payload method is called.
+// it returns itself for chaining.
+func (o *builderAction) WithPayloadV(p interface{}, err error) *builderAction {
 	o.payload = func(*Config) (interface{}, error) { return p, err }
 	return o
 }
-func (o *builderAction) WithForkPayloadsFunc(p map[string]Payload) *builderAction {
+
+// WithForkPayloads creates a new Payload func by calling ForkPayloads with "p"
+// it returns itself for chaining.
+func (o *builderAction) WithForkPayloads(p map[string]Payload) *builderAction {
 	o.payload = ForkPayloads(p)
 	return o
 }
-func (o *builderAction) WithForkPayloads(p map[string]interface{}) *builderAction {
+
+// WithForkPayloadsV creates new Payload funcs that return the value stored at each key in "p".
+// The builderAction's Payload function is the result of calling ForkPayloads() on this
+// map of new functions.
+// it returns itself for chaining.
+func (o *builderAction) WithForkPayloadsV(p map[string]interface{}) *builderAction {
 	newMap := make(map[string]Payload)
 	for k, v := range p {
 		newMap[k] = func(*Config) (interface{}, error) {
@@ -122,15 +163,19 @@ func (o *builderAction) WithQuestionsPayload(kvs ...KV) *builderAction {
 	}
 	return o
 }
+
+// WithAggregatePayload makes a new Payload func by calling CombinePayloads() on "p".
+// The builderAction's Payload function is replaced by this new Payload function.
+// it returns itself for chaining.
 func (o *builderAction) WithAggregatePayload(p map[string]Payload) *builderAction {
 	o.payload = CombinePayloads(p)
 	return o
 }
-func (o *builderAction) WithExecute(result interface{}, err error) *builderAction {
+func (o *builderAction) WithExecuteV(result interface{}, err error) *builderAction {
 	o.execute = func(*Config, interface{}) (interface{}, error) { return result, err }
 	return o
 }
-func (o *builderAction) WithExecuteOfMapPayload(p func(*Config, map[string]interface{}) (interface{}, error)) *builderAction {
+func (o *builderAction) WithExecuteMap(p func(*Config, map[string]interface{}) (interface{}, error)) *builderAction {
 	o.execute = func(c *Config, q interface{}) (interface{}, error) {
 		converted, ok := q.(map[string]interface{})
 		if !ok {
@@ -140,7 +185,7 @@ func (o *builderAction) WithExecuteOfMapPayload(p func(*Config, map[string]inter
 	}
 	return o
 }
-func (o *builderAction) WithExecuteOfSlicePayload(p func(*Config, []interface{}) (interface{}, error)) *builderAction {
+func (o *builderAction) WithExecuteSlice(p func(*Config, []interface{}) (interface{}, error)) *builderAction {
 	o.execute = func(c *Config, q interface{}) (interface{}, error) {
 		converted, ok := q.([]interface{})
 		if !ok {
@@ -150,7 +195,7 @@ func (o *builderAction) WithExecuteOfSlicePayload(p func(*Config, []interface{})
 	}
 	return o
 }
-func (o *builderAction) WithExecuteOfStringPayload(pFunc func(*Config, string) (interface{}, error)) *builderAction {
+func (o *builderAction) WithExecuteString(pFunc func(*Config, string) (interface{}, error)) *builderAction {
 	o.execute = func(c *Config, p interface{}) (interface{}, error) {
 		converted, ok := p.(string)
 		if !ok {
@@ -160,7 +205,7 @@ func (o *builderAction) WithExecuteOfStringPayload(pFunc func(*Config, string) (
 	}
 	return o
 }
-func (o *builderAction) WithExecuteOfInt64Payload(pFunc func(*Config, int64) (interface{}, error)) *builderAction {
+func (o *builderAction) WithExecuteInt64(pFunc func(*Config, int64) (interface{}, error)) *builderAction {
 	o.execute = func(c *Config, p interface{}) (interface{}, error) {
 		converted, ok := p.(int64)
 		if !ok {
@@ -178,26 +223,82 @@ func (o *builderAction) WithExecuteOfInt64Payload(pFunc func(*Config, int64) (in
 	}
 	return o
 }
-func (o *builderAction) WithExecuteOfNoPayload(pFunc func(*Config) (interface{}, error)) *builderAction {
+func (o *builderAction) WithExecuteVoid(pFunc func(*Config) (interface{}, error)) *builderAction {
 	o.execute = func(c *Config, _ interface{}) (interface{}, error) {
 		return pFunc(c)
 	}
 	return o
 }
-func (o *builderAction) WithAdditions(a map[string]Action) *builderAction {
+
+// Void Execute functions
+func (o *builderAction) WithVoidExecuteMap(p func(*Config, map[string]interface{}) error) *builderAction {
+	o.execute = func(c *Config, q interface{}) (interface{}, error) {
+		converted, ok := q.(map[string]interface{})
+		if !ok {
+			return nil, TypeConvertErr(q, map[string]interface{}{})
+		}
+		return nil, p(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithVoidExecuteSlice(p func(*Config, []interface{}) error) *builderAction {
+	o.execute = func(c *Config, q interface{}) (interface{}, error) {
+		converted, ok := q.([]interface{})
+		if !ok {
+			return nil, TypeConvertErr(q, []interface{}{})
+		}
+		return nil, p(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithVoidExecuteString(pFunc func(*Config, string) error) *builderAction {
+	o.execute = func(c *Config, p interface{}) (interface{}, error) {
+		converted, ok := p.(string)
+		if !ok {
+			return nil, TypeConvertErr(p, "")
+		}
+		return nil, pFunc(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithVoidExecuteInt64(pFunc func(*Config, int64) error) *builderAction {
+	o.execute = func(c *Config, p interface{}) (interface{}, error) {
+		converted, ok := p.(int64)
+		if !ok {
+			err := TypeConvertErr(p, "")
+			convString, ok := p.(string)
+			if !ok {
+				return nil, err
+			}
+			converted, err = strconv.ParseInt(convString, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return nil, pFunc(c, converted)
+	}
+	return o
+}
+func (o *builderAction) WithVoidExecuteVoid(pFunc func(*Config) error) *builderAction {
+	o.execute = func(c *Config, _ interface{}) (interface{}, error) {
+		return nil, pFunc(c)
+	}
+	return o
+}
+
+func (o *builderAction) WithAdditionsV(a map[string]Action) *builderAction {
 	o.additions = func(*Config) map[string]Action { return a }
 	return o
 }
-func (o *builderAction) WithRemovals(r []string) *builderAction {
-	o.removals = func() []string { return r }
+func (o *builderAction) WithRemovalsV(rs ...string) *builderAction {
+	o.removals = func() []string { return rs }
 	return o
 }
-func (o *builderAction) WithRemovalsV(rs ...string) *builderAction { return o.WithRemovals(rs) }
-func (o *builderAction) WithTags(t []string) *builderAction {
-	o.tags = func() []string { return t }
+
+func (o *builderAction) WithTagsV(ts ...string) *builderAction {
+	o.tags = func() []string { return ts }
 	return o
 }
-func (o *builderAction) WithTagsV(ts ...string) *builderAction { return o.WithTags(ts) }
 
 // Break this action into a group of its parts
 func (o *builderAction) Break() actionParts { return Break(o) }
@@ -275,7 +376,7 @@ func (LoadAction) Additions(*Config) map[string]Action { return nil }
 func (LoadAction) Removals() []string                  { return nil }
 func (LoadAction) Name() string                        { return "load" }
 func (LoadAction) Desc() string                        { return "load from a file" }
-func (LoadAction) Tags() []string                      { return []string{"load", "default"} }
+func (LoadAction) Tags() []string                      { return []string{"default"} }
 
 type HelpAction struct {
 	cmds *Commands
@@ -298,14 +399,14 @@ func (HelpAction) Additions(*Config) map[string]Action { return nil }
 func (HelpAction) Removals() []string                  { return nil }
 func (HelpAction) Name() string                        { return "help" }
 func (HelpAction) Desc() string                        { return "get help for stuff" }
-func (HelpAction) Tags() []string                      { return []string{"default", "help"} }
+func (HelpAction) Tags() []string                      { return []string{"help"} }
 
 type SaveAction struct{}
 
 func (s SaveAction) Payload(c *Config) (interface{}, error) {
 	var filename string
 
-	return filename, scan("type save path, or leave empty for default. \n(%s)", &filename)
+	return filename, scan("type save path, or leave empty for default.", &filename)
 }
 
 // must Always have a string payload that is the filepath to save
@@ -316,12 +417,7 @@ func (s SaveAction) Execute(c *Config, payload interface{}) (interface{}, error)
 	}
 	ReplaceDotSlash(&ans)
 	ReplaceHome(&ans)
-	// TODO this works?
-	conf, ok := (interface{})(c).(struct{ File string })
-	if !ok {
-		return nil, fmt.Errorf("save action expects a `File` field on your config")
-	}
-	conf.File = ans
+
 	bytes, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
@@ -332,7 +428,7 @@ func (SaveAction) Additions(*Config) map[string]Action { return nil }
 func (SaveAction) Removals() []string                  { return nil }
 func (SaveAction) Name() string                        { return "save" }
 func (SaveAction) Desc() string                        { return "save the config to a file" }
-func (SaveAction) Tags() []string                      { return []string{"save", "default"} }
+func (SaveAction) Tags() []string                      { return []string{"default"} }
 
 type WrapNameAction struct {
 	newName   string
@@ -390,9 +486,9 @@ func (w *WatchAction) Execute(conf *Config, payload interface{}) (interface{}, e
 }
 func (w *WatchAction) Additions(*Config) map[string]Action {
 	return map[string]Action{
-		"stop-" + w.action.Name(): Build().WithExecuteOfNoPayload(func(c *Config) (interface{}, error) {
+		"stop-" + w.action.Name(): Build().WithVoidExecuteVoid(func(c *Config) error {
 			w.ticker.Stop()
-			return nil, nil
+			return nil
 		}),
 	}
 }
@@ -401,9 +497,9 @@ func (w *WatchAction) Name() string       { return w.action.Name() }
 func (w *WatchAction) Tags() []string     { return []string{"watch", "repeating", w.action.Name()} }
 
 func PrintAction(name, msg string) Action {
-	return Build().WithName(name).WithExecuteOfNoPayload(func(*Config) (_ interface{}, _ error) {
+	return Build().WithNameV(name).WithVoidExecuteVoid(func(*Config) error {
 		fmt.Println(msg)
-		return
+		return nil
 	})
 }
 
@@ -412,7 +508,7 @@ func MakeTrigger(parent Action, children ...Action) Action {
 	for _, v := range children {
 		m[v.Name()] = v
 	}
-	return BuildOverriding(parent).WithAdditions(m)
+	return Override(parent).WithAdditionsV(m)
 }
 
 // return a Payload function that asks the user to pick between the keys in the map

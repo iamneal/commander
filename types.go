@@ -6,11 +6,34 @@ import (
 	"time"
 )
 
-// the error type returned whenever Commands.Get("quit")() is called
+// opt is a key and value pair where the value is overridable
+type opt struct {
+	key   string
+	value string
+}
+
+func OptZero(key string) opt         { return opt{key: key} }
+func Opt(key, value string) opt      { return opt{key, value} }
+func (o opt) Set(v string) opt       { return opt{key: o.key, value: v} }
+func (o opt) Read() (string, string) { return o.key, o.value }
+
+// the error returned whenever Commands.Get("quit")() is called
+var Quit = QuitError{}
+
 type QuitError struct{}
 
 func (QuitError) Error() string {
 	return "quit"
+}
+
+// the error to return from a payload function if you would like
+// to skip the execution function of the action
+var Skip = SkipExecute{}
+
+type SkipExecute struct{}
+
+func (SkipExecute) Error() string {
+	return "skip"
 }
 
 // Could be anything, but helps distinguish between payload
@@ -36,13 +59,13 @@ func (a actionParts) Removals() Removals   { return a.removals }
 func (a actionParts) Tags() Tags           { return a.tags }
 func (a actionParts) Action() Action {
 	return Build().
-		WithNameFunc(a.name).
-		WithDescFunc(a.desc).
-		WithPayloadFunc(a.payload).
-		WithExecuteFunc(a.execute).
-		WithAdditionsFunc(a.additions).
-		WithRemovalsFunc(a.removals).
-		WithTagsFunc(a.tags)
+		WithName(a.name).
+		WithDesc(a.desc).
+		WithPayload(a.payload).
+		WithExecute(a.execute).
+		WithAdditions(a.additions).
+		WithRemovals(a.removals).
+		WithTags(a.tags)
 }
 
 // NopParts returns a new actionParts struct without having to provide an action
@@ -67,11 +90,11 @@ func Break(action Action) actionParts {
 // The function signiture of Action.Name function
 type Name func() string
 
-func (n Name) From(s string) Name     { return func() string { return s } }
-func (n Name) PrefixFunc(o Name) Name { return func() string { return o() + n() } }
-func (n Name) Prefix(o string) Name   { return func() string { return o + n() } }
-func (n Name) SuffixFunc(o Name) Name { return func() string { return n() + o() } }
-func (n Name) Suffix(o string) Name   { return func() string { return n() + o } }
+func (n Name) From(s string) Name    { return func() string { return s } }
+func (n Name) Prefix(o Name) Name    { return func() string { return o() + n() } }
+func (n Name) PrefixV(o string) Name { return func() string { return o + n() } }
+func (n Name) Suffix(o Name) Name    { return func() string { return n() + o() } }
+func (n Name) SuffixV(o string) Name { return func() string { return n() + o } }
 
 // The function signiture of Action.Desc function
 type Desc func() string
@@ -87,8 +110,8 @@ func (e Execute) FromE(f interface{}, err error) Execute {
 	return func(*Config, interface{}) (interface{}, error) { return f, err }
 }
 
-// From is a shortcut for `Execute{}.FromE(res, nil)`
-// where <res> is the result of some Execute function
+// From is a shortcut for `Execute{}.FromE(f, nil)`
+// where <f> is the result of some Execute function
 func (e Execute) From(f interface{}) Execute { return e.FromE(f, nil) }
 
 // Chain is used to merge together Execute functions.
@@ -341,7 +364,7 @@ func (w *Work) do(conf *Config) error {
 	if err != nil {
 		w.Success = false
 		w.Failure = true
-		w.Result = fmt.Sprintf(`{"error": true, "message": "%s"}`, err)
+		w.Result = err.Error()
 		w.err = err
 		return err
 	} else {
@@ -365,7 +388,6 @@ func newWorkChan(buff int64) *workChan {
 	}
 }
 func (w *workChan) Start(conf *Config) {
-	fmt.Printf("started the work chan\n")
 	for v := range w.queue {
 		w.CachedResults[v.Name] = v
 		v.do(conf)
