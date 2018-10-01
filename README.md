@@ -161,6 +161,7 @@ a `rules_commander.bzl` script will provide rules that will:
     - another example would be `PayloadCmdlineProcessor` that could optionally be given
     the extra `[]string` recieved from processing a fmt.Scanln, for command line processing.
 - Named opts that can extend/change functionality in the Commands struct
+- Add a describe default command that will return the action's descriptions
 
 
 

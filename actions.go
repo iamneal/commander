@@ -399,7 +399,7 @@ func (HelpAction) Additions(*Config) map[string]Action { return nil }
 func (HelpAction) Removals() []string                  { return nil }
 func (HelpAction) Name() string                        { return "help" }
 func (HelpAction) Desc() string                        { return "get help for stuff" }
-func (HelpAction) Tags() []string                      { return []string{"help"} }
+func (HelpAction) Tags() []string                      { return []string{"default"} }
 
 type SaveAction struct{}
 
