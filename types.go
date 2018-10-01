@@ -278,13 +278,16 @@ func (q KV) Scan() (string, interface{}, error) {
 	switch q.Hint {
 	case STR:
 		p := ""
-		val, err = handleScan(p, scan(q.Q, &p))
+		err := scan(q.Q, &p)
+		val, err = handleScan(p, err)
 	case INT:
 		p := int64(0)
-		val, err = handleScan(p, scan(q.Q, &p))
+		err := scan(q.Q, &p)
+		val, err = handleScan(p, err)
 	case FLO:
 		p := float64(0)
-		val, err = handleScan(p, scan(q.Q, &p))
+		err := scan(q.Q, &p)
+		val, err = handleScan(p, err)
 	}
 	return q.Key, val, err
 }

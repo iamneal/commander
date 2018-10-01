@@ -162,7 +162,7 @@ a `rules_commander.bzl` script will provide rules that will:
     the extra `[]string` recieved from processing a fmt.Scanln, for command line processing.
 - Named opts that can extend/change functionality in the Commands struct
 - Add a describe default command that will return the action's descriptions
-
+- Global action store that can be used like the sql/driver package to register default actions
 
 
     
